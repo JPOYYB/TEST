@@ -1,216 +1,525 @@
 <!DOCTYPE html>
+
 <html lang="ja">
+
 <head>
+
     <meta charset="UTF-8">
-    <title>マリオ風ゲーム - ボス戦（色のみ版）</title>
+
+    <title>マリオ風ゲームDX</title>
+
     <style>
+
         body { margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; background: #222; color: white; font-family: sans-serif; flex-direction: column;}
+
         canvas { background: #87CEEB; border: 2px solid #555; }
+
         #status { margin-top: 10px; font-size: 20px; }
+
     </style>
+
 </head>
+
 <body>
+
     <canvas id="gameCanvas" width="800" height="400"></canvas>
-    <div id="status">矢印キーで移動、スペースでジャンプ。右奥のボス(紫)を倒せ！</div>
+
+    <div id="status">矢印キーで移動、スペースでジャンプ</div>
+
+
 
 <script>
+
     const canvas = document.getElementById("gameCanvas");
+
     const ctx = canvas.getContext("2d");
+
+// --- ここを追加 ---
+
+const playerImg = new Image();
+
+playerImg.src = "icon1.jpg"; // 画像ファイル名と同じにする
+
+
+
+const blockImg = new Image();
+
+blockImg.src = "icon2.jpg";  // 画像ファイル名と同じにする
+
+
+
+const enemyImg = new Image();
+
+enemyImg.src = "icon3.jpg";  // 画像ファイル名と同じにする
+
+// ----------------
+
+
+
     const statusDiv = document.getElementById("status");
 
-    // --- ゲーム設定 ---
-    let gameState = "playing";
+
+
+    // --- ゲームの設定 ---
+
+    let gameState = "playing"; // "playing", "gameOver", "cleared"
+
     let cameraX = 0;
-    const STAGE_WIDTH = 2000;
+
+    const STAGE_WIDTH = 2000; // ステージの全長
+
+
+
+    // --- 画像の準備（※今回は色で代用しますが、使い方の例です）---
+
+    // 実際の開発では、以下のように画像を読み込みます。
+
+    // const playerImg = new Image(); playerImg.src = "mario.png";
+
+    // const blockImg = new Image(); blockImg.src = "block.png";
+
+
+
+
 
     // --- オブジェクト定義 ---
 
-    // プレイヤー（赤色）
+
+
+    // プレイヤー
+
     const player = {
+
         x: 50, y: 200, width: 30, height: 30, color: "red",
+
         dx: 0, dy: 0, speed: 5, jumpPower: -13, gravity: 0.6,
+
         grounded: false
+
     };
 
-    // 地形（茶色と緑）
+
+
+    // ゴール地点
+
+    const goal = { x: 1850, y: 250, w: 50, h: 100, color: "gold" };
+
+
+
+    // 地形ブロック定義
+
     const platforms = [
-        { x: 0, y: 350, w: 2000, h: 50, color: "green" }, // 草地
-        { x: 300, y: 250, w: 100, h: 20, color: "#8B4513" }, // ブロック
-        { x: 500, y: 180, w: 100, h: 20, color: "#8B4513" },
-        { x: 750, y: 250, w: 200, h: 20, color: "#8B4513" },
-        { x: 1100, y: 150, w: 100, h: 20, color: "#8B4513" },
-        { x: 1300, y: 250, w: 100, h: 20, color: "#8B4513" },
-        { x: 1750, y: 300, w: 150, h: 50, color: "green" } // ボス前の足場
+
+        { x: 0, y: 350, w: 2000, h: 50, color: "green" }, // 長い床
+
+        { x: 300, y: 250, w: 100, h: 20, color: "brown" },
+
+        { x: 500, y: 180, w: 100, h: 20, color: "brown" },
+
+        { x: 750, y: 250, w: 200, h: 20, color: "brown" },
+
+        { x: 1100, y: 150, w: 100, h: 20, color: "brown" },
+
+        { x: 1300, y: 250, w: 150, h: 20, color: "brown" },
+
+        { x: 1600, y: 300, w: 100, h: 50, color: "green" } // ゴール前の階段
+
     ];
 
-    // ザコ敵（茶色の小さい四角）
+
+
+    // 敵キャラ定義（単純に左右移動するクリボータイプ）
+
     let enemies = [
-        { x: 400, y: 320, width: 30, height: 30, color: "brown", dx: -2, alive: true, startX: 400 },
-        { x: 800, y: 220, width: 30, height: 30, color: "brown", dx: 2, alive: true, startX: 800 },
-        { x: 1200, y: 320, width: 30, height: 30, color: "brown", dx: -3, alive: true, startX: 1200 }
+
+        { x: 400, y: 320, width: 30, height: 30, color: "#8B4513", dx: -2, alive: true },
+
+        { x: 800, y: 220, width: 30, height: 30, color: "#8B4513", dx: 2, alive: true },
+
+        { x: 1400, y: 320, width: 30, height: 30, color: "#8B4513", dx: -3, alive: true }
+
     ];
 
-    // ★ボス（紫色の巨大四角）★
-    let boss = {
-        x: 1450, y: 270,        // 初期位置
-        width: 80, height: 80,  // デカい
-        color: "purple",        // 紫色
-        dx: 3, hp: 3, alive: true, invulnerable: 0, 
-        isActive: false,        // 画面内に入ったら動く
-        startX: 1450, endX: 1700
-    };
 
-    // キー操作
+
+    // キー入力管理
+
     const keys = {};
+
     window.addEventListener("keydown", (e) => {
+
         keys[e.code] = true;
+
+        // ゲームオーバー/クリア時にリトライ
+
         if (gameState !== "playing" && e.code === "Space") resetGame();
+
     });
+
     window.addEventListener("keyup", (e) => keys[e.code] = false);
 
 
-    // --- メイン処理 ---
-    function update() {
-        if (gameState !== "playing") return;
 
-        // 1. プレイヤー移動
+
+
+    // --- ゲームロジック ---
+
+
+
+    function update() {
+
+        if (gameState !== "playing") return; // プレイ中以外は更新を止める
+
+
+
+        // 1. プレイヤーの移動と物理演算
+
         if (keys["ArrowLeft"]) player.dx = -player.speed;
+
         else if (keys["ArrowRight"]) player.dx = player.speed;
+
         else player.dx = 0;
 
+
+
         if (keys["Space"] && player.grounded) {
+
             player.dy = player.jumpPower;
+
             player.grounded = false;
+
         }
 
-        player.dy += player.gravity;
-        player.x += player.dx;
-        player.y += player.dy;
-        player.grounded = false;
 
-        // 2. 地形判定
+
+        player.dy += player.gravity; // 重力
+
+        player.x += player.dx;
+
+        player.y += player.dy;
+
+        player.grounded = false; // 接地判定リセット
+
+
+
+        // 2. 地形との当たり判定
+
         platforms.forEach(plat => {
+
             if (checkCollision(player, plat)) {
+
+                // 下方向への落下中に衝突＝着地
+
                 if (player.dy > 0 && player.y + player.height < plat.y + player.dy + 5) {
+
                     player.y = plat.y - player.height;
+
                     player.dy = 0;
+
                     player.grounded = true;
-                } else if (player.dy < 0 && player.y > plat.y + plat.h + player.dy - 5) {
-                    player.y = plat.y + plat.h;
-                    player.dy = 0;
+
                 }
+
+                 // 頭をぶつけた場合（簡易版）
+
+                else if (player.dy < 0 && player.y > plat.y + plat.h + player.dy - 5) {
+
+                    player.y = plat.y + plat.h;
+
+                    player.dy = 0;
+
+                 }
+
             }
+
         });
 
-        // 3. カメラ
-        if (player.x > cameraX + canvas.width / 2) cameraX = player.x - canvas.width / 2;
+
+
+        // 3. 画面スクロール計算
+
+        // プレイヤーが画面中央より右に行ったらカメラを動かす
+
+        if (player.x > cameraX + canvas.width / 2) {
+
+            cameraX = player.x - canvas.width / 2;
+
+        }
+
+        // カメラがステージ端を超えないように制限
+
         cameraX = Math.max(0, Math.min(cameraX, STAGE_WIDTH - canvas.width));
 
-        // 4. ザコ敵
+
+
+        // 4. 敵の動作と当たり判定
+
         enemies.forEach(enemy => {
+
             if (!enemy.alive) return;
+
+            
+
+            // 敵の移動
+
             enemy.x += enemy.dx;
+
+            // 簡易的な敵の折り返し（一定範囲で往復させる例）
+
+            // 実際は地形判定などを入れるが、今回は省略
+
             if(enemy.x < enemy.startX - 100 || enemy.x > enemy.startX + 100) enemy.dx *= -1;
 
+
+
+            // プレイヤーとの衝突判定
+
             if (checkCollision(player, enemy)) {
+
+                // プレイヤーが落下中 かつ 敵の上半分に当たった＝踏みつけ成功
+
                 if (player.dy > 0 && player.y + player.height < enemy.y + enemy.height / 2) {
-                    enemy.alive = false; player.dy = -8;
+
+                    enemy.alive = false; // 敵を倒す
+
+                    player.dy = -8; // 軽く跳ねる
+
                 } else {
-                    gameState = "gameOver"; statusDiv.innerText = "ザコ敵にやられた... (スペースでリトライ)";
+
+                    // 横や下から当たった＝ゲームオーバー
+
+                    gameState = "gameOver";
+
+                    statusDiv.innerText = "GAME OVER! スペースキーでリトライ";
+
                 }
+
             }
+
         });
 
-        // 5. ボス戦ロジック
-        if (!boss.isActive && cameraX > 1000) boss.isActive = true;
 
-        if (boss.alive && boss.isActive) {
-            boss.x += boss.dx;
-            if (boss.x < boss.startX || boss.x > boss.endX) boss.dx *= -1;
-            if (boss.invulnerable > 0) boss.invulnerable--;
 
-            if (checkCollision(player, boss)) {
-                if (boss.invulnerable === 0) {
-                    if (player.dy > 0 && player.y + player.height < boss.y + boss.height / 2) {
-                        boss.hp--; player.dy = -10; boss.invulnerable = 60;
-                        statusDiv.innerText = "ボスに命中！ 残り体力: " + boss.hp;
-                        if (boss.hp <= 0) {
-                            boss.alive = false; gameState = "cleared"; statusDiv.innerText = "完全クリア！おめでとう！";
-                        }
-                    } else {
-                        gameState = "gameOver"; statusDiv.innerText = "ボスにやられた... (スペースでリトライ)";
-                    }
-                }
-            }
+        // 5. ゴール判定
+
+        if (checkCollision(player, goal)) {
+
+            gameState = "cleared";
+
+            statusDiv.innerText = "STAGE CLEAR!! おめでとう！ スペースキーでリトライ";
+
         }
+
         
-        if (player.y > canvas.height) { gameState = "gameOver"; statusDiv.innerText = "落下... (スペースでリトライ)"; }
+
+        // 落下判定
+
+        if (player.y > canvas.height) {
+
+            gameState = "gameOver";
+
+            statusDiv.innerText = "落下しました... スペースキーでリトライ";
+
+        }
+
+
+
+        // 画面外制限（左端のみ）
+
         if (player.x < 0) player.x = 0;
+
     }
 
-    function checkCollision(r1, r2) {
-        return (r1.x < r2.x + (r2.w||r2.width) && r1.x + r1.width > r2.x && r1.y < r2.y + (r2.h||r2.height) && r1.y + r1.height > r2.y);
+
+
+    // 汎用的な矩形の衝突判定関数
+
+    function checkCollision(rect1, rect2) {
+
+        return (
+
+            rect1.x < rect2.x + (rect2.w || rect2.width) &&
+
+            rect1.x + rect1.width > rect2.x &&
+
+            rect1.y < rect2.y + (rect2.h || rect2.height) &&
+
+            rect1.y + rect1.height > rect2.y
+
+        );
+
     }
+
+
 
     function resetGame() {
+
         player.x = 50; player.y = 200; player.dy = 0;
-        cameraX = 0; gameState = "playing";
-        statusDiv.innerText = "矢印キーで移動、スペースでジャンプ。右奥のボス(紫)を倒せ！";
-        enemies.forEach(e => { e.x = e.startX; e.alive = true; });
-        boss.x = 1450; boss.hp = 3; boss.alive = true; boss.invulnerable = 0; boss.isActive = false;
+
+        cameraX = 0;
+
+        gameState = "playing";
+
+        statusDiv.innerText = "矢印キーで移動、スペースでジャンプ";
+
+        // 敵を復活させる
+
+        enemies = [
+
+             { x: 400, y: 320, width: 30, height: 30, color: "#8B4513", dx: -2, alive: true, startX:400 },
+
+             { x: 800, y: 220, width: 30, height: 30, color: "#8B4513", dx: 2, alive: true, startX:800 },
+
+             { x: 1400, y: 320, width: 30, height: 30, color: "#8B4513", dx: -3, alive: true, startX:1400 }
+
+        ];
+
     }
 
-    // --- 描画処理 (ここを画像ではなく色塗りに変更しました) ---
+
+
+
+
+    // --- 描画処理 ---
+
+
+
     function draw() {
+
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.save();
-        ctx.translate(-cameraX, 0);
 
-        // 地形
+
+
+        // カメラ位置を考慮して描画コンテキストをずらす（ここが重要！）
+
+        ctx.save(); // 現在の描画状態を保存
+
+        ctx.translate(-cameraX, 0); // カメラのX座標分だけ全体を左にずらす
+
+
+
+        // ゴールの描画
+
+        ctx.fillStyle = goal.color;
+
+        ctx.fillRect(goal.x, goal.y, goal.w, goal.h);
+
+
+
+        // ブロックの描画
+
         platforms.forEach(plat => {
-            ctx.fillStyle = plat.color;
-            ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
-        });
 
-        // ザコ敵
-        enemies.forEach(enemy => {
-            if (enemy.alive) {
-                ctx.fillStyle = enemy.color;
-                ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+            // 画面内にあるものだけ描画（最適化）
+
+            if(plat.x + plat.w > cameraX && plat.x < cameraX + canvas.width){
+
+                //ctx.fillStyle = plat.color;
+
+                //ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
+
+                // --- 画像を使う場合の例 ---
+
+                ctx.drawImage(blockImg, plat.x, plat.y, plat.w, plat.h);
+
             }
+
         });
 
-        // ボス（紫色の四角）
-        if (boss.alive) {
-            if (boss.invulnerable > 0) ctx.globalAlpha = 0.5; // 無敵中は半透明
-            ctx.fillStyle = boss.color;
-            ctx.fillRect(boss.x, boss.y, boss.width, boss.height);
-            ctx.globalAlpha = 1.0;
-            
-            // ボスの文字を表示
-            ctx.fillStyle = "white";
-            ctx.font = "20px Arial";
-            ctx.fillText("BOSS", boss.x + 10, boss.y + 45);
-        }
 
-        // プレイヤー（赤色の四角）
-        ctx.fillStyle = player.color;
-        ctx.fillRect(player.x, player.y, player.width, player.height);
 
-        ctx.restore();
+        // 敵の描画
 
-        // UI表示
+        enemies.forEach(enemy => {
+
+            if (enemy.alive) {
+
+                //ctx.fillStyle = enemy.color;
+
+                //ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+
+                // --- 画像を使う場合の例 ---
+
+                ctx.drawImage(enemyImg, enemy.x, enemy.y, enemy.width, enemy.height);
+
+            }
+
+        });
+
+
+
+        // プレイヤーの描画
+
+        //ctx.fillStyle = player.color;
+
+        //ctx.fillRect(player.x, player.y, player.width, player.height);
+
+        // --- 画像を使う場合の例 ---
+
+        // 向きによって画像を変えるなどの処理もここで行います
+
+         ctx.drawImage(playerImg, player.x, player.y, player.width, player.height);
+
+
+
+        ctx.restore(); // 描画状態を元に戻す（ずらしを解除）
+
+
+
+        // UIの描画（スコアなどはここ）
+
         if (gameState === "gameOver") {
-            ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(0,0,canvas.width,canvas.height);
-            ctx.fillStyle = "white"; ctx.font = "40px Arial"; ctx.fillText("GAME OVER", 280, 200);
+
+            ctx.fillStyle = "rgba(0,0,0,0.5)";
+
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.fillStyle = "white";
+
+            ctx.font = "40px Arial";
+
+            ctx.fillText("GAME OVER", 280, 200);
+
         } else if (gameState === "cleared") {
-            ctx.fillStyle = "rgba(255,215,0,0.5)"; ctx.fillRect(0,0,canvas.width,canvas.height);
-            ctx.fillStyle = "white"; ctx.font = "40px Arial"; ctx.fillText("ALL CLEAR!", 300, 200);
+
+            ctx.fillStyle = "rgba(255,215,0,0.5)";
+
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.fillStyle = "white";
+
+            ctx.font = "40px Arial";
+
+            ctx.fillText("STAGE CLEAR!", 260, 200);
+
         }
+
     }
 
-    function loop() { update(); draw(); requestAnimationFrame(loop); }
+
+
+    function loop() {
+
+        update();
+
+        draw();
+
+        requestAnimationFrame(loop);
+
+    }
+
+
+
+    // 敵の初期位置を記憶（リセット用）
+
+    enemies.forEach(e => e.startX = e.x);
+
     loop();
+
+
+
 </script>
+
 </body>
+
 </html>
