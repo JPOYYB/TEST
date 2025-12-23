@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>マリオ風ゲームDX - 完全修正版</title>
+    <title>マリオ風ゲームDX - 決定版</title>
     <style>
         body { 
             margin: 0; display: flex; justify-content: center; align-items: center; 
@@ -48,8 +48,8 @@
     const ctx = canvas.getContext("2d");
     const statusDiv = document.getElementById("status");
 
-    // --- 画像の準備（修正：タイムスタンプを削除） ---
-    // これでローカル環境でもエラーになりません
+    // --- 画像の準備 ---
+    // 画像がなくても動くようにエラー対策済み
     const playerImg = new Image(); playerImg.src = "icon1.jpg";
     const blockImg = new Image();  blockImg.src = "icon2.jpg";
     const enemyImg = new Image();  enemyImg.src = "icon3.jpg";
@@ -61,25 +61,38 @@
     // --- ゲーム設定 ---
     let gameState = "playing";
     let cameraX = 0;
-    const STAGE_WIDTH = 3000;
+    const STAGE_WIDTH = 3000; // ★要件1: ステージ幅3000px
 
     // --- オブジェクト定義 ---
     const player = {
         x: 50, y: 200, 
         width: 30, height: 30, normalW: 30, normalH: 30, bigW: 40, bigH: 50,
         dx: 0, dy: 0, speed: 5, jumpPower: -13, gravity: 0.6, grounded: false,
-        isBig: false, invulnerable: 0, jumpCount: 0
+        isBig: false, invulnerable: 0, 
+        jumpCount: 0 // ★要件3: 2段ジャンプ用
     };
 
     const goal = { x: 2800, y: 250, w: 50, h: 100, color: "gold", active: false };
 
+    // 地形データ
     let platforms = [
+        // スタート地点
         { x: 0, y: 350, w: 800, h: 50, type: "normal", color: "green" },
-        { x: 300, y: 250, w: 50, h: 50, type: "questionBlock", hasItem: true, color: "gold" }, // ハテナ
+        
+        // ★要件2: ハテナブロックはここ1か所のみ
+        { x: 300, y: 250, w: 50, h: 50, type: "questionBlock", hasItem: true, color: "gold" },
+
+        // 足場と落とし穴エリア
         { x: 900, y: 300, w: 200, h: 20, type: "normal", color: "brown" },
         { x: 1300, y: 250, w: 200, h: 20, type: "normal", color: "brown" },
+        
+        // 中間の地面
         { x: 1700, y: 350, w: 300, h: 50, type: "normal", color: "green" },
+
+        // 難所
         { x: 2100, y: 280, w: 100, h: 20, type: "normal", color: "brown" },
+        
+        // ボスエリア
         { x: 2300, y: 350, w: 700, h: 50, type: "normal", color: "green" }
     ];
 
@@ -97,9 +110,11 @@
     let items = [];
     const keys = {};
 
-    // --- ジャンプ関数 ---
+    // --- ジャンプ関数（2段ジャンプ対応） ---
     function tryJump() {
         if (gameState !== "playing") { resetGame(); return; }
+        
+        // 地面にいるか、ジャンプ回数が2回未満ならジャンプ許可
         if (player.grounded || player.jumpCount < 2) {
             player.dy = player.jumpPower;
             player.grounded = false;
@@ -128,6 +143,7 @@
             e.preventDefault();
             if (keyName !== "Jump") keys[keyName] = false;
         }, { passive: false });
+        // PCテスト用マウスイベント
         btn.addEventListener("mousedown", () => {
             if (keyName === "Jump") tryJump(); else keys[keyName] = true;
         });
@@ -180,7 +196,10 @@
         else if (keys["ArrowRight"]) player.dx = player.speed;
         else player.dx = 0;
         player.dy += player.gravity; player.x += player.dx; player.y += player.dy; 
-        player.grounded = false;
+        
+        // 一度接地フラグを切る（この後の判定で着地ならtrueにする）
+        player.grounded = false; 
+
         if (player.invulnerable > 0) player.invulnerable--;
 
         // 地形判定
@@ -189,9 +208,15 @@
                 const overlapBottom = (player.y + player.height) - plat.y;
                 const overlapTop = (plat.y + plat.h) - player.y;
                 
+                // 着地判定
                 if (player.dy > 0 && overlapBottom > 0 && overlapBottom <= 16) {
-                    player.y = plat.y - player.height; player.dy = 0; player.grounded = true; player.jumpCount = 0;
-                } else if (player.dy < 0 && overlapTop > 0 && overlapTop <= 16) {
+                    player.y = plat.y - player.height; 
+                    player.dy = 0; 
+                    player.grounded = true; 
+                    player.jumpCount = 0; // 着地でジャンプ回数リセット
+                } 
+                // 頭打ち判定
+                else if (player.dy < 0 && overlapTop > 0 && overlapTop <= 16) {
                     player.y = plat.y + plat.h; player.dy = 0;
                     if (plat.type === "questionBlock" && plat.hasItem) {
                         plat.hasItem = false; spawnMushroom(plat.x, plat.y);
@@ -271,13 +296,12 @@
         if (player.x < 0) player.x = 0;
     }
 
-    // --- 描画（修正：画像がないときは色で表示する安全設計） ---
+    // --- 描画（画像がないときは色で表示する安全設計） ---
     function drawObj(img, obj) {
-        // 画像読み込み完了＆幅が0じゃないなら画像を描画
         if (img.complete && img.naturalWidth !== 0) {
             ctx.drawImage(img, obj.x, obj.y, obj.w || obj.width, obj.h || obj.height);
         } else {
-            // 画像がないなら色で描画（これで真っ白回避）
+            // 画像読み込み失敗時は色で描画
             ctx.fillStyle = obj.color || "grey";
             ctx.fillRect(obj.x, obj.y, obj.w || obj.width, obj.h || obj.height);
         }
@@ -309,7 +333,7 @@
         boss.fireballs.forEach(fb => { ctx.fillStyle = fb.color; ctx.beginPath(); ctx.arc(fb.x + fb.width/2, fb.y + fb.height/2, fb.width/2, 0, Math.PI*2); ctx.fill(); });
 
         if (player.invulnerable > 0) ctx.globalAlpha = 0.5;
-        // プレイヤー描画（画像がない場合は赤色になるよう色指定を追加）
+        // プレイヤー描画（画像なし時のデフォルト色: red）
         drawObj(playerImg, { ...player, color: "red" });
         ctx.globalAlpha = 1.0;
         ctx.restore();
