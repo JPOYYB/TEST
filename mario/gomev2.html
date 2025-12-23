@@ -3,15 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>マリオ風ゲームDX - 最終調整版</title>
+    <title>マリオ風ゲームDX - 軽量版</title>
     <style>
         body { 
             margin: 0; display: flex; justify-content: center; align-items: center; 
             height: 100vh; background: #222; color: white; font-family: sans-serif; 
             flex-direction: column; overflow: hidden; touch-action: none;
         }
-        canvas { background: #87CEEB; border: 2px solid #555; max-width: 100%; }
-        #status { margin-top: 5px; font-size: 16px; height: 20px; text-align: center;}
+        canvas { 
+            background: #87CEEB; border: 2px solid #555; 
+            /* スマホ画面に合わせて最大化しつつ比率保持 */
+            max-width: 100%; max-height: 80vh; 
+            image-rendering: pixelated; /* ドット絵っぽくクッキリさせて高速化 */
+        }
+        #status { margin-top: 5px; font-size: 14px; height: 20px; text-align: center;}
         
         #controls {
             position: fixed; bottom: 10px; width: 100%; height: 120px;
@@ -23,13 +28,13 @@
         .d-row { display: flex; gap: 5px; }
         
         .control-btn {
-            width: 60px; height: 60px; background: rgba(255, 255, 255, 0.5);
-            border: 2px solid white; border-radius: 10px; font-size: 24px;
+            width: 55px; height: 55px; background: rgba(255, 255, 255, 0.4);
+            border: 2px solid white; border-radius: 10px; font-size: 20px;
             color: #333; display: flex; justify-content: center; align-items: center;
             user-select: none; -webkit-user-select: none;
         }
-        .control-btn:active { background: rgba(255, 255, 255, 0.8); }
-        #btnJump { background: rgba(255, 100, 100, 0.5); border-radius: 50%; width: 70px; height: 70px; margin-bottom: 10px;}
+        .control-btn:active { background: rgba(255, 255, 255, 0.7); }
+        #btnJump { background: rgba(255, 100, 100, 0.4); border-radius: 50%; width: 65px; height: 65px; margin-bottom: 10px;}
     </style>
 </head>
 <body>
@@ -53,9 +58,12 @@
 <script>
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
+    
+    // ★高速化設定: 画像補間をオフにする（クッキリ表示＆処理軽減）
+    ctx.imageSmoothingEnabled = false;
+
     const statusDiv = document.getElementById("status");
 
-    // 画像準備
     const playerImg = new Image(); playerImg.src = "icon1.jpg";
     const blockImg = new Image();  blockImg.src = "icon2.jpg";
     const enemyImg = new Image();  enemyImg.src = "icon3.jpg";
@@ -63,7 +71,6 @@
     const qBlockImg = new Image(); qBlockImg.src = "icon_qblock.jpg";
     const emptyBlockImg = new Image(); emptyBlockImg.src = "icon_empty.jpg";
     const mushroomImg = new Image(); mushroomImg.src = "icon_mushroom.jpg";
-    // シューティング用画像
     const playerShipImg = new Image(); playerShipImg.src = "ship_player.jpg";
     const uraBossImg = new Image();    uraBossImg.src = "ship_boss.jpg";
     const spaceBgImg = new Image();    spaceBgImg.src = "bg_space.jpg";
@@ -72,7 +79,6 @@
     let cameraX = 0;
     const STAGE_WIDTH = 3000;
 
-    // --- オブジェクト ---
     const player = {
         x: 50, y: 200, prevY: 200,
         width: 30, height: 30, normalW: 30, normalH: 30, bigW: 40, bigH: 50,
@@ -114,7 +120,6 @@
 
     const keys = {};
 
-    // --- 操作イベント ---
     window.addEventListener("keydown", (e) => {
         keys[e.code] = true;
         if ((gameState === "gameOver" || gameState === "cleared") && e.code === "Space") resetGame();
@@ -141,12 +146,18 @@
         return (r1.x < r2.x + w2 && r1.x + w1 > r2.x && r1.y < r2.y + h2 && r1.y + h1 > r2.y);
     }
 
+    // ★高速化: 描画座標をMath.floorで整数にする
     function drawObj(img, obj) {
+        const x = Math.floor(obj.x);
+        const y = Math.floor(obj.y);
+        const w = Math.floor(obj.w || obj.width);
+        const h = Math.floor(obj.h || obj.height);
+        
         if (img.complete && img.naturalWidth !== 0) {
-            ctx.drawImage(img, obj.x, obj.y, obj.w || obj.width, obj.h || obj.height);
+            ctx.drawImage(img, x, y, w, h);
         } else {
             ctx.fillStyle = obj.color || "grey";
-            ctx.fillRect(obj.x, obj.y, obj.w || obj.width, obj.h || obj.height);
+            ctx.fillRect(x, y, w, h);
         }
     }
 
@@ -174,7 +185,6 @@
         }
     }
 
-    // --- メインループ ---
     function update() {
         if (gameState === "platformer") updatePlatformer();
         else if (gameState === "shooter") updateShooter();
@@ -193,16 +203,13 @@
         }
     }
 
-    // ==========================================
-    //  フェーズ1: アクションゲーム (Platformer)
-    // ==========================================
+    // --- Platformer ---
     function updatePlatformer() {
         if (keys["ArrowLeft"]) player.dx = -player.speed;
         else if (keys["ArrowRight"]) player.dx = player.speed;
         else player.dx = 0;
 
         player.prevY = player.y;
-
         player.dy += player.gravity; 
         if(player.dy > 15) player.dy = 15;
         player.x += player.dx; player.y += player.dy; 
@@ -253,11 +260,9 @@
             boss.x += boss.dx; if(boss.x < boss.startX || boss.x > boss.endX) boss.dx*=-1;
             if(boss.invulnerable > 0) boss.invulnerable--;
             boss.attackTimer++;
-            // 表ボス: 攻撃頻度高め(60)
             if(boss.attackTimer > 60){ 
                 boss.attackTimer=0; 
                 let dir = player.x < boss.x ? -1 : 1; 
-                // 表ボス: 弾速速い(12)
                 boss.fireballs.push({x:boss.x+boss.width/2, y:boss.y+boss.height/2, width:25, height:25, dx:12*dir, color:"orange"}); 
             }
             if(checkCollision(player, boss)){
@@ -289,9 +294,7 @@
         else { gameState="gameOver"; statusDiv.innerText="GAME OVER..."; }
     }
 
-    // ==========================================
-    //  フェーズ2: シューティング (Shooter)
-    // ==========================================
+    // --- Shooter ---
     function startShooterMode() {
         gameState = "shooter";
         player.x = 100; player.y = 200; 
@@ -336,7 +339,7 @@
             uraBoss.moveAngle += 0.05;
             uraBoss.y = 150 + Math.sin(uraBoss.moveAngle) * 100;
             uraBoss.attackTimer++;
-            // ★裏ボス: 弾幕ゆっくり調整 (間隔 50, 80 / スピード 2.5, 2)
+            // ゆっくり弾幕設定
             if (uraBoss.attackTimer % 50 === 0) {
                 let angle = Math.atan2((player.y - uraBoss.y), (player.x - uraBoss.x));
                 enemyBullets.push({ x: uraBoss.x, y: uraBoss.y + 40, w: 10, h: 10, dx: Math.cos(angle)*2.5, dy: Math.sin(angle)*2.5, color: "red" });
@@ -356,7 +359,8 @@
     function drawPlatformer() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.save();
-        ctx.translate(-cameraX, 0);
+        // ★高速化: 整数でカメラ移動
+        ctx.translate(-Math.floor(cameraX), 0);
 
         if(goal.active){ ctx.fillStyle = goal.color; ctx.fillRect(goal.x, goal.y, goal.w, goal.h); }
         platforms.forEach(p => { 
@@ -376,25 +380,33 @@
     }
 
     function drawShooter() {
-        // ★背景描画
+        // ★高速化: 画像がない場合の背景描画を1枚絵または単色クリアに
         if(spaceBgImg.complete && spaceBgImg.naturalWidth !== 0){
             ctx.drawImage(spaceBgImg, 0, 0, canvas.width, canvas.height);
         } else {
             ctx.fillStyle = "#111"; ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = "white"; for(let i=0; i<20; i++) ctx.fillRect(Math.random()*800, Math.random()*400, 2, 2);
+            // スターの数を減らす
+            ctx.fillStyle = "white"; for(let i=0; i<10; i++) ctx.fillRect(Math.floor(Math.random()*800), Math.floor(Math.random()*400), 2, 2);
         }
 
         drawObj(playerShipImg, player);
 
-        ctx.fillStyle = "cyan"; bullets.forEach(b => ctx.fillRect(b.x, b.y, b.w, b.h));
+        ctx.fillStyle = "cyan"; 
+        bullets.forEach(b => ctx.fillRect(Math.floor(b.x), Math.floor(b.y), b.w, b.h));
 
         if(uraBoss.alive){
             drawObj(uraBossImg, uraBoss);
-            ctx.fillStyle = "red"; ctx.fillRect(uraBoss.x, uraBoss.y - 10, uraBoss.width, 5);
-            ctx.fillStyle = "lime"; ctx.fillRect(uraBoss.x, uraBoss.y - 10, uraBoss.width * (uraBoss.hp/uraBoss.maxHp), 5);
+            ctx.fillStyle = "red"; ctx.fillRect(Math.floor(uraBoss.x), Math.floor(uraBoss.y - 10), uraBoss.width, 5);
+            ctx.fillStyle = "lime"; ctx.fillRect(Math.floor(uraBoss.x), Math.floor(uraBoss.y - 10), Math.floor(uraBoss.width * (uraBoss.hp/uraBoss.maxHp)), 5);
         }
 
-        enemyBullets.forEach(eb => { ctx.fillStyle = eb.color; ctx.beginPath(); ctx.arc(eb.x+eb.w/2, eb.y+eb.h/2, eb.w/2, 0, Math.PI*2); ctx.fill(); });
+        enemyBullets.forEach(eb => { 
+            ctx.fillStyle = eb.color; 
+            ctx.beginPath(); 
+            // 座標を整数化
+            ctx.arc(Math.floor(eb.x+eb.w/2), Math.floor(eb.y+eb.h/2), eb.w/2, 0, Math.PI*2); 
+            ctx.fill(); 
+        });
     }
 
     function loop() { update(); draw(); requestAnimationFrame(loop); }
