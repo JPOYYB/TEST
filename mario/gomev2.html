@@ -22,6 +22,9 @@ playerImg.src = "icon1.jpg"; // 画像ファイル名と同じにする
 
 const blockImg = new Image();
 blockImg.src = "icon2.jpg";  // 画像ファイル名と同じにする
+
+const enemyImg = new Image();
+enemyImg.src = "icon3.jpg";  // 画像ファイル名と同じにする
 // ----------------
 
     const statusDiv = document.getElementById("status");
@@ -213,8 +216,10 @@ blockImg.src = "icon2.jpg";  // 画像ファイル名と同じにする
         // 敵の描画
         enemies.forEach(enemy => {
             if (enemy.alive) {
-                ctx.fillStyle = enemy.color;
-                ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+                //ctx.fillStyle = enemy.color;
+                //ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+                // --- 画像を使う場合の例 ---
+                ctx.drawImage(enemyImg, enemy.x, enemy.y, enemy.width, enemy.height);
             }
         });
 
