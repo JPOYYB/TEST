@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>マリオ風ゲームDX - ジョイスティック版</title>
+    <title>マリオ風ゲームDX - 操作改善版</title>
     <style>
         body { 
             margin: 0; display: flex; justify-content: center; align-items: center; 
@@ -17,62 +17,43 @@
         }
         #status { margin-top: 5px; font-size: 14px; height: 20px; text-align: center;}
         
+        /* コントローラー配置 */
         #controls {
-            position: fixed; bottom: 20px; width: 100%; height: 120px;
+            position: fixed; bottom: 10px; width: 100%; height: 120px;
             display: flex; justify-content: space-between; pointer-events: none;
-            padding: 0 30px; box-sizing: border-box;
+            padding: 0 10px; box-sizing: border-box;
         }
         
-        /* 右側のジャンプボタン */
-        .btn-group-right { pointer-events: auto; display: flex; align-items: flex-end; }
+        .btn-group { pointer-events: auto; display: flex; gap: 15px; align-items: flex-end; }
+        
+        /* ボタンデザイン */
+        .control-btn {
+            width: 75px; height: 75px; background: rgba(255, 255, 255, 0.3);
+            border: 2px solid white; border-radius: 50%; font-size: 30px;
+            color: #fff; display: flex; justify-content: center; align-items: center;
+            user-select: none; -webkit-user-select: none;
+            text-shadow: 1px 1px 2px black;
+        }
+        .control-btn:active { background: rgba(255, 255, 255, 0.6); transform: scale(0.95); }
+        
         #btnJump { 
-            background: rgba(255, 100, 100, 0.4); width: 80px; height: 80px; 
-            border-radius: 50%; border: 2px solid white; color: white;
-            font-size: 24px; display: flex; justify-content: center; align-items: center;
-            user-select: none;
+            background: rgba(255, 50, 50, 0.4); 
+            width: 85px; height: 85px; 
         }
-        #btnJump:active { background: rgba(255, 100, 100, 0.7); }
-
-        /* --- ジョイスティック（プニコン風）のスタイル --- */
-        #joystick-area {
-            pointer-events: auto;
-            position: relative;
-            width: 100px; height: 100px;
-            /* 左下に配置 */
-        }
-        #stick-base {
-            width: 100%; height: 100%;
-            background: rgba(255, 255, 255, 0.2);
-            border: 2px solid rgba(255, 255, 255, 0.5);
-            border-radius: 50%;
-            position: absolute; top: 0; left: 0;
-        }
-        #stick-knob {
-            width: 50px; height: 50px;
-            background: rgba(255, 255, 255, 0.8);
-            border-radius: 50%;
-            position: absolute;
-            top: 25px; left: 25px; /* 中央配置 (100-50)/2 */
-            box-shadow: 0 0 10px rgba(0,0,0,0.3);
-            transition: transform 0.1s; /* 指を離した時にスッと戻るアニメーション */
-        }
-        /* ドラッグ中はアニメーションを切る（追従性を良くするため） */
-        .dragging #stick-knob { transition: none; }
-
     </style>
 </head>
 <body>
-    <div id="status">PC:矢印/スペース | スマホ:画面スティック</div>
+    <div id="status">PC:矢印/スペース | スマホ:画面ボタン</div>
     <canvas id="gameCanvas" width="800" height="400"></canvas>
     
     <div id="controls">
-        <div id="joystick-area">
-            <div id="stick-base"></div>
-            <div id="stick-knob"></div>
+        <div class="btn-group">
+            <div id="btnLeft" class="control-btn">←</div>
+            <div id="btnRight" class="control-btn">→</div>
         </div>
         
-        <div class="btn-group-right">
-            <div id="btnJump">J</div>
+        <div class="btn-group">
+            <div id="btnJump" class="control-btn">J</div>
         </div>
     </div>
 
@@ -98,6 +79,7 @@
     let cameraX = 0;
     const STAGE_WIDTH = 3000;
 
+    // --- オブジェクト ---
     const player = {
         x: 50, y: 200, prevY: 200,
         width: 30, height: 30, normalW: 30, normalH: 30, bigW: 40, bigH: 50,
@@ -139,7 +121,7 @@
 
     const keys = {};
 
-    // --- キーボード操作 ---
+    // --- キーボード入力 ---
     window.addEventListener("keydown", (e) => {
         keys[e.code] = true;
         if ((gameState === "gameOver" || gameState === "cleared") && e.code === "Space") resetGame();
@@ -147,80 +129,40 @@
     });
     window.addEventListener("keyup", (e) => keys[e.code] = false);
 
-    // --- ジャンプボタン (Touch) ---
-    function setupJumpBtn(id) {
+    // --- スマホ入力（マルチタッチ対応） ---
+    // ボタンごとに独立してタッチイベントを監視します
+    function setupButton(id, code) {
         const btn = document.getElementById(id);
-        btn.addEventListener("touchstart", (e) => { e.preventDefault(); keys["Space"] = true; if((gameState === "gameOver" || gameState === "cleared")) resetGame(); if(gameState==="platformer") tryJump();}, { passive: false });
-        btn.addEventListener("touchend", (e) => { e.preventDefault(); keys["Space"] = false; }, { passive: false });
-        btn.addEventListener("mousedown", () => { keys["Space"] = true; if(gameState==="platformer") tryJump(); });
-        btn.addEventListener("mouseup", () => keys["Space"] = false);
-    }
-    setupJumpBtn("btnJump");
-
-    // --- ★ジョイスティック制御ロジック★ ---
-    const joystickArea = document.getElementById("joystick-area");
-    const stickKnob = document.getElementById("stick-knob");
-    let stickDrag = false;
-    let stickStartX = 0;
-    const maxDistance = 40; // スティックが動ける最大半径
-
-    function handleStickStart(e) {
-        e.preventDefault();
-        stickDrag = true;
-        joystickArea.classList.add("dragging");
-        // タッチ位置またはマウス位置を取得
-        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-        stickStartX = clientX; 
-    }
-
-    function handleStickMove(e) {
-        if (!stickDrag) return;
-        e.preventDefault();
-        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         
-        // 中心からの移動距離
-        let deltaX = clientX - stickStartX;
-        
-        // 最大距離で制限
-        if (deltaX > maxDistance) deltaX = maxDistance;
-        if (deltaX < -maxDistance) deltaX = -maxDistance;
+        // タッチ開始
+        btn.addEventListener("touchstart", (e) => { 
+            e.preventDefault(); // スクロール防止
+            keys[code] = true; 
+            
+            // 特別な処理（リセットやジャンプ）
+            if(code === "Space") {
+                if(gameState === "platformer") tryJump();
+                if(gameState === "gameOver" || gameState === "cleared") resetGame();
+            }
+        }, { passive: false });
 
-        // 見た目を更新
-        stickKnob.style.transform = `translate(${deltaX}px, 0px)`;
+        // タッチ終了
+        btn.addEventListener("touchend", (e) => { 
+            e.preventDefault(); 
+            keys[code] = false; 
+        }, { passive: false });
 
-        // キー入力状態を更新
-        if (deltaX < -10) { // 左へ一定以上倒したら
-            keys["ArrowLeft"] = true;
-            keys["ArrowRight"] = false;
-        } else if (deltaX > 10) { // 右へ一定以上倒したら
-            keys["ArrowLeft"] = false;
-            keys["ArrowRight"] = true;
-        } else {
-            // 中央付近なら停止
-            keys["ArrowLeft"] = false;
-            keys["ArrowRight"] = false;
-        }
+        // PCでのテスト用（マウス）
+        btn.addEventListener("mousedown", () => { 
+            keys[code] = true; 
+            if(code === "Space" && gameState === "platformer") tryJump();
+        });
+        btn.addEventListener("mouseup", () => keys[code] = false);
     }
 
-    function handleStickEnd(e) {
-        e.preventDefault();
-        stickDrag = false;
-        joystickArea.classList.remove("dragging");
-        // スティックを中心に戻す
-        stickKnob.style.transform = `translate(0px, 0px)`;
-        // 入力解除
-        keys["ArrowLeft"] = false;
-        keys["ArrowRight"] = false;
-    }
-
-    // イベント登録 (Touch & Mouse)
-    joystickArea.addEventListener("touchstart", handleStickStart, {passive: false});
-    document.addEventListener("touchmove", handleStickMove, {passive: false}); // 画面外に出ても追従するようにdocument
-    document.addEventListener("touchend", handleStickEnd, {passive: false});
-
-    joystickArea.addEventListener("mousedown", handleStickStart);
-    document.addEventListener("mousemove", handleStickMove);
-    document.addEventListener("mouseup", handleStickEnd);
+    setupButton("btnLeft", "ArrowLeft");
+    setupButton("btnRight", "ArrowRight");
+    setupButton("btnJump", "Space");
 
 
     // --- 共通関数 ---
@@ -235,6 +177,7 @@
         const y = Math.floor(obj.y);
         const w = Math.floor(obj.w || obj.width);
         const h = Math.floor(obj.h || obj.height);
+        
         if (img.complete && img.naturalWidth !== 0) {
             ctx.drawImage(img, x, y, w, h);
         } else {
