@@ -11,7 +11,7 @@
 </head>
 <body>
     <canvas id="gameCanvas" width="800" height="400"></canvas>
-    <div id="status">矢印キーで移動、スペースでジャンプ。ボス(紫)を3回踏め！</div>
+    <div id="status">矢印キーで移動、スペースでジャンプ。右奥のボス(紫)を倒せ！</div>
 
 <script>
     const canvas = document.getElementById("gameCanvas");
@@ -155,7 +155,7 @@
     function resetGame() {
         player.x = 50; player.y = 200; player.dy = 0;
         cameraX = 0; gameState = "playing";
-        statusDiv.innerText = "矢印キーで移動、スペースでジャンプ。ボス(紫)を3回踏め！";
+        statusDiv.innerText = "矢印キーで移動、スペースでジャンプ。右奥のボス(紫)を倒せ！";
         enemies.forEach(e => { e.x = e.startX; e.alive = true; });
         boss.x = 1450; boss.hp = 3; boss.alive = true; boss.invulnerable = 0; boss.isActive = false;
     }
