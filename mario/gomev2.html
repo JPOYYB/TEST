@@ -103,4 +103,114 @@
         });
 
         // 3. カメラ
-        if (player.x > cameraX + canvas.
+        if (player.x > cameraX + canvas.width / 2) cameraX = player.x - canvas.width / 2;
+        cameraX = Math.max(0, Math.min(cameraX, STAGE_WIDTH - canvas.width));
+
+        // 4. ザコ敵
+        enemies.forEach(enemy => {
+            if (!enemy.alive) return;
+            enemy.x += enemy.dx;
+            if(enemy.x < enemy.startX - 100 || enemy.x > enemy.startX + 100) enemy.dx *= -1;
+
+            if (checkCollision(player, enemy)) {
+                if (player.dy > 0 && player.y + player.height < enemy.y + enemy.height / 2) {
+                    enemy.alive = false; player.dy = -8;
+                } else {
+                    gameState = "gameOver"; statusDiv.innerText = "ザコ敵にやられた... (スペースでリトライ)";
+                }
+            }
+        });
+
+        // 5. ボス戦ロジック
+        if (!boss.isActive && cameraX > 1000) boss.isActive = true;
+
+        if (boss.alive && boss.isActive) {
+            boss.x += boss.dx;
+            if (boss.x < boss.startX || boss.x > boss.endX) boss.dx *= -1;
+            if (boss.invulnerable > 0) boss.invulnerable--;
+
+            if (checkCollision(player, boss)) {
+                if (boss.invulnerable === 0) {
+                    if (player.dy > 0 && player.y + player.height < boss.y + boss.height / 2) {
+                        boss.hp--; player.dy = -10; boss.invulnerable = 60;
+                        statusDiv.innerText = "ボスに命中！ 残り体力: " + boss.hp;
+                        if (boss.hp <= 0) {
+                            boss.alive = false; gameState = "cleared"; statusDiv.innerText = "完全クリア！おめでとう！";
+                        }
+                    } else {
+                        gameState = "gameOver"; statusDiv.innerText = "ボスにやられた... (スペースでリトライ)";
+                    }
+                }
+            }
+        }
+        
+        if (player.y > canvas.height) { gameState = "gameOver"; statusDiv.innerText = "落下... (スペースでリトライ)"; }
+        if (player.x < 0) player.x = 0;
+    }
+
+    function checkCollision(r1, r2) {
+        return (r1.x < r2.x + (r2.w||r2.width) && r1.x + r1.width > r2.x && r1.y < r2.y + (r2.h||r2.height) && r1.y + r1.height > r2.y);
+    }
+
+    function resetGame() {
+        player.x = 50; player.y = 200; player.dy = 0;
+        cameraX = 0; gameState = "playing";
+        statusDiv.innerText = "矢印キーで移動、スペースでジャンプ。ボス(紫)を3回踏め！";
+        enemies.forEach(e => { e.x = e.startX; e.alive = true; });
+        boss.x = 1450; boss.hp = 3; boss.alive = true; boss.invulnerable = 0; boss.isActive = false;
+    }
+
+    // --- 描画処理 (ここを画像ではなく色塗りに変更しました) ---
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.save();
+        ctx.translate(-cameraX, 0);
+
+        // 地形
+        platforms.forEach(plat => {
+            ctx.fillStyle = plat.color;
+            ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
+        });
+
+        // ザコ敵
+        enemies.forEach(enemy => {
+            if (enemy.alive) {
+                ctx.fillStyle = enemy.color;
+                ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+            }
+        });
+
+        // ボス（紫色の四角）
+        if (boss.alive) {
+            if (boss.invulnerable > 0) ctx.globalAlpha = 0.5; // 無敵中は半透明
+            ctx.fillStyle = boss.color;
+            ctx.fillRect(boss.x, boss.y, boss.width, boss.height);
+            ctx.globalAlpha = 1.0;
+            
+            // ボスの文字を表示
+            ctx.fillStyle = "white";
+            ctx.font = "20px Arial";
+            ctx.fillText("BOSS", boss.x + 10, boss.y + 45);
+        }
+
+        // プレイヤー（赤色の四角）
+        ctx.fillStyle = player.color;
+        ctx.fillRect(player.x, player.y, player.width, player.height);
+
+        ctx.restore();
+
+        // UI表示
+        if (gameState === "gameOver") {
+            ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(0,0,canvas.width,canvas.height);
+            ctx.fillStyle = "white"; ctx.font = "40px Arial"; ctx.fillText("GAME OVER", 280, 200);
+        } else if (gameState === "cleared") {
+            ctx.fillStyle = "rgba(255,215,0,0.5)"; ctx.fillRect(0,0,canvas.width,canvas.height);
+            ctx.fillStyle = "white"; ctx.font = "40px Arial"; ctx.fillText("ALL CLEAR!", 300, 200);
+        }
+    }
+
+    function loop() { update(); draw(); requestAnimationFrame(loop); }
+    loop();
+</script>
+</body>
+</html>
