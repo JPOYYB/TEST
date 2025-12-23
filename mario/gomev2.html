@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>マリオ風ゲームDX - 決定版</title>
+    <title>マリオ風ゲームDX - ボス強化版</title>
     <style>
         body { 
             margin: 0; display: flex; justify-content: center; align-items: center; 
@@ -49,7 +49,6 @@
     const statusDiv = document.getElementById("status");
 
     // --- 画像の準備 ---
-    // 画像がなくても動くようにエラー対策済み
     const playerImg = new Image(); playerImg.src = "icon1.jpg";
     const blockImg = new Image();  blockImg.src = "icon2.jpg";
     const enemyImg = new Image();  enemyImg.src = "icon3.jpg";
@@ -61,38 +60,26 @@
     // --- ゲーム設定 ---
     let gameState = "playing";
     let cameraX = 0;
-    const STAGE_WIDTH = 3000; // ★要件1: ステージ幅3000px
+    const STAGE_WIDTH = 3000;
 
     // --- オブジェクト定義 ---
     const player = {
         x: 50, y: 200, 
         width: 30, height: 30, normalW: 30, normalH: 30, bigW: 40, bigH: 50,
         dx: 0, dy: 0, speed: 5, jumpPower: -13, gravity: 0.6, grounded: false,
-        isBig: false, invulnerable: 0, 
-        jumpCount: 0 // ★要件3: 2段ジャンプ用
+        isBig: false, invulnerable: 0, jumpCount: 0
     };
 
     const goal = { x: 2800, y: 250, w: 50, h: 100, color: "gold", active: false };
 
     // 地形データ
     let platforms = [
-        // スタート地点
         { x: 0, y: 350, w: 800, h: 50, type: "normal", color: "green" },
-        
-        // ★要件2: ハテナブロックはここ1か所のみ
         { x: 300, y: 250, w: 50, h: 50, type: "questionBlock", hasItem: true, color: "gold" },
-
-        // 足場と落とし穴エリア
         { x: 900, y: 300, w: 200, h: 20, type: "normal", color: "brown" },
         { x: 1300, y: 250, w: 200, h: 20, type: "normal", color: "brown" },
-        
-        // 中間の地面
         { x: 1700, y: 350, w: 300, h: 50, type: "normal", color: "green" },
-
-        // 難所
         { x: 2100, y: 280, w: 100, h: 20, type: "normal", color: "brown" },
-        
-        // ボスエリア
         { x: 2300, y: 350, w: 700, h: 50, type: "normal", color: "green" }
     ];
 
@@ -102,19 +89,26 @@
         { x: 1800, y: 320, width: 30, height: 30, dx: -3, alive: true, startX: 1800, color: "brown" }
     ];
 
+    // ★ボス設定（強化）★
     let boss = {
-        x: 2600, y: 200, width: 100, height: 100, dx: 3, hp: 5, alive: true, invulnerable: 0, isActive: false,
-        startX: 2400, endX: 2750, attackTimer: 0, fireballs: [], color: "purple"
+        x: 2600, y: 200, width: 100, height: 100, 
+        dx: 3, hp: 5, alive: true, invulnerable: 0, isActive: false,
+        startX: 2350, endX: 2800, // 行動範囲
+        moveTimer: 0,            // ランダム移動用タイマー
+        attackTimer: 0,          // 攻撃開始用タイマー
+        burstCount: 0,           // 連射カウント
+        burstDelay: 0,           // 連射間隔
+        isBursting: false,       // 連射中フラグ
+        fireballs: [], 
+        color: "purple"
     };
 
     let items = [];
     const keys = {};
 
-    // --- ジャンプ関数（2段ジャンプ対応） ---
+    // --- ジャンプ関数 ---
     function tryJump() {
         if (gameState !== "playing") { resetGame(); return; }
-        
-        // 地面にいるか、ジャンプ回数が2回未満ならジャンプ許可
         if (player.grounded || player.jumpCount < 2) {
             player.dy = player.jumpPower;
             player.grounded = false;
@@ -143,7 +137,6 @@
             e.preventDefault();
             if (keyName !== "Jump") keys[keyName] = false;
         }, { passive: false });
-        // PCテスト用マウスイベント
         btn.addEventListener("mousedown", () => {
             if (keyName === "Jump") tryJump(); else keys[keyName] = true;
         });
@@ -183,7 +176,14 @@
         statusDiv.innerText = "GO! ハテナブロックを叩いて進め！";
         enemies.forEach(e => { e.x = e.startX; e.alive = true; });
         goal.active = false;
-        boss = { x: 2600, y: 200, width: 100, height: 100, dx: 3, hp: 5, alive: true, invulnerable: 0, isActive: false, startX: 2400, endX: 2750, attackTimer: 0, fireballs: [], color: "purple" };
+        // ボスリセット
+        boss = { 
+            x: 2600, y: 200, width: 100, height: 100, 
+            dx: 3, hp: 5, alive: true, invulnerable: 0, isActive: false, 
+            startX: 2350, endX: 2800, 
+            moveTimer: 0, attackTimer: 0, burstCount: 0, burstDelay: 0, isBursting: false,
+            fireballs: [], color: "purple" 
+        };
         platforms.forEach(p => { if(p.type==="questionBlock") p.hasItem = true; });
         items = [];
     }
@@ -196,10 +196,7 @@
         else if (keys["ArrowRight"]) player.dx = player.speed;
         else player.dx = 0;
         player.dy += player.gravity; player.x += player.dx; player.y += player.dy; 
-        
-        // 一度接地フラグを切る（この後の判定で着地ならtrueにする）
-        player.grounded = false; 
-
+        player.grounded = false;
         if (player.invulnerable > 0) player.invulnerable--;
 
         // 地形判定
@@ -207,16 +204,9 @@
             if (checkCollision(player, plat)) {
                 const overlapBottom = (player.y + player.height) - plat.y;
                 const overlapTop = (plat.y + plat.h) - player.y;
-                
-                // 着地判定
                 if (player.dy > 0 && overlapBottom > 0 && overlapBottom <= 16) {
-                    player.y = plat.y - player.height; 
-                    player.dy = 0; 
-                    player.grounded = true; 
-                    player.jumpCount = 0; // 着地でジャンプ回数リセット
-                } 
-                // 頭打ち判定
-                else if (player.dy < 0 && overlapTop > 0 && overlapTop <= 16) {
+                    player.y = plat.y - player.height; player.dy = 0; player.grounded = true; player.jumpCount = 0;
+                } else if (player.dy < 0 && overlapTop > 0 && overlapTop <= 16) {
                     player.y = plat.y + plat.h; player.dy = 0;
                     if (plat.type === "questionBlock" && plat.hasItem) {
                         plat.hasItem = false; spawnMushroom(plat.x, plat.y);
@@ -263,17 +253,56 @@
             }
         });
 
-        // ボス
+        // ★ボスロジック（ランダム移動＆3連射）★
         if (!boss.isActive && cameraX > 2000) boss.isActive = true;
         if (boss.alive && boss.isActive) {
-            boss.x += boss.dx; if (boss.x < boss.startX || boss.x > boss.endX) boss.dx *= -1;
-            if (boss.invulnerable > 0) boss.invulnerable--;
-            boss.attackTimer++;
-            if (boss.attackTimer > 100) {
-                boss.attackTimer = 0;
-                const dir = player.x < boss.x ? -1 : 1;
-                boss.fireballs.push({ x: boss.x + boss.width/2, y: boss.y + boss.height/2, width: 20, height: 20, dx: 6 * dir, color: "orange" });
+            
+            // --- 1. ランダム移動ロジック ---
+            boss.moveTimer--;
+            if (boss.moveTimer <= 0) {
+                // タイマー切れで次の行動を決定
+                // ランダムな方向(-1か1) * ランダムな速度(2〜6)
+                boss.dx = (Math.random() < 0.5 ? -1 : 1) * (2 + Math.random() * 4);
+                // 次の変更までの時間 (30〜90フレーム = 0.5〜1.5秒)
+                boss.moveTimer = 30 + Math.random() * 60;
             }
+            boss.x += boss.dx;
+
+            // 画面外に行かないように制限
+            if (boss.x < boss.startX) { boss.x = boss.startX; boss.dx *= -1; }
+            if (boss.x > boss.endX) { boss.x = boss.endX; boss.dx *= -1; }
+            
+            if (boss.invulnerable > 0) boss.invulnerable--;
+
+            // --- 2. 攻撃ロジック（3連射） ---
+            if (!boss.isBursting) {
+                // 待機中
+                boss.attackTimer++;
+                // ランダムな間隔で攻撃開始 (約1.5秒〜2.5秒)
+                if (boss.attackTimer > 90 + Math.random() * 60) {
+                    boss.isBursting = true;
+                    boss.burstCount = 0;
+                    boss.attackTimer = 0;
+                }
+            } else {
+                // 連射中
+                boss.burstDelay--;
+                if (boss.burstDelay <= 0) {
+                    // 発射！
+                    const dir = player.x < boss.x ? -1 : 1;
+                    // ★弾速アップ: 6 -> 9
+                    boss.fireballs.push({ x: boss.x + boss.width/2, y: boss.y + boss.height/2, width: 20, height: 20, dx: 9 * dir, color: "orange" });
+                    
+                    boss.burstCount++;
+                    boss.burstDelay = 10; // 連射間隔（速い！）
+
+                    if (boss.burstCount >= 3) {
+                        boss.isBursting = false; // 3発撃ったら終了
+                    }
+                }
+            }
+
+            // 衝突判定
             if (checkCollision(player, boss)) {
                 if (boss.invulnerable === 0) {
                     if (player.dy > 0 && player.y + player.height < boss.y + boss.height / 2) {
@@ -296,12 +325,11 @@
         if (player.x < 0) player.x = 0;
     }
 
-    // --- 描画（画像がないときは色で表示する安全設計） ---
+    // --- 描画 ---
     function drawObj(img, obj) {
         if (img.complete && img.naturalWidth !== 0) {
             ctx.drawImage(img, obj.x, obj.y, obj.w || obj.width, obj.h || obj.height);
         } else {
-            // 画像読み込み失敗時は色で描画
             ctx.fillStyle = obj.color || "grey";
             ctx.fillRect(obj.x, obj.y, obj.w || obj.width, obj.h || obj.height);
         }
@@ -333,7 +361,6 @@
         boss.fireballs.forEach(fb => { ctx.fillStyle = fb.color; ctx.beginPath(); ctx.arc(fb.x + fb.width/2, fb.y + fb.height/2, fb.width/2, 0, Math.PI*2); ctx.fill(); });
 
         if (player.invulnerable > 0) ctx.globalAlpha = 0.5;
-        // プレイヤー描画（画像なし時のデフォルト色: red）
         drawObj(playerImg, { ...player, color: "red" });
         ctx.globalAlpha = 1.0;
         ctx.restore();
