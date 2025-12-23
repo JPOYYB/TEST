@@ -17,14 +17,17 @@
         }
         #status { margin-top: 5px; font-size: 14px; height: 20px; text-align: center;}
         
+        /* コントローラー全体 */
         #controls {
             position: fixed; bottom: 10px; width: 100%; height: 100px;
             display: flex; justify-content: space-between; pointer-events: none;
             padding: 0 20px; box-sizing: border-box;
         }
-        .btn-group { pointer-events: auto; display: flex; gap: 15px; align-items: flex-end; }
         
-        /* ボタンのデザイン調整 */
+        /* ボタンのグループ */
+        .btn-group { pointer-events: auto; display: flex; gap: 20px; align-items: flex-end; }
+        
+        /* 共通ボタンデザイン */
         .control-btn {
             width: 70px; height: 70px; background: rgba(255, 255, 255, 0.4);
             border: 2px solid white; border-radius: 50%; font-size: 30px;
@@ -32,6 +35,8 @@
             user-select: none; -webkit-user-select: none;
         }
         .control-btn:active { background: rgba(255, 255, 255, 0.7); }
+        
+        /* ジャンプ/ショットボタンは少し大きく */
         #btnJump { background: rgba(255, 100, 100, 0.4); width: 80px; height: 80px; }
     </style>
 </head>
@@ -44,8 +49,9 @@
             <div id="btnLeft" class="control-btn">←</div>
             <div id="btnRight" class="control-btn">→</div>
         </div>
+        
         <div class="btn-group">
-            <div id="btnJump" class="control-btn">J/Shot</div>
+            <div id="btnJump" class="control-btn">J</div>
         </div>
     </div>
 
@@ -128,11 +134,13 @@
 
     function setupTouch(id, code) {
         const btn = document.getElementById(id);
+        if(!btn) return; // エラー防止
         btn.addEventListener("touchstart", (e) => { e.preventDefault(); keys[code] = true; if((gameState === "gameOver" || gameState === "cleared") && code === "Space") resetGame(); if(code==="Space" && gameState==="platformer") tryJump();}, { passive: false });
         btn.addEventListener("touchend", (e) => { e.preventDefault(); keys[code] = false; }, { passive: false });
         btn.addEventListener("mousedown", () => { keys[code] = true; if(code==="Space" && gameState==="platformer") tryJump(); });
         btn.addEventListener("mouseup", () => keys[code] = false);
     }
+    // 上下のボタンIDは削除したので登録しない
     setupTouch("btnLeft", "ArrowLeft");
     setupTouch("btnRight", "ArrowRight");
     setupTouch("btnJump", "Space");
@@ -301,7 +309,7 @@
         player.color = "cyan"; 
         player.invulnerable = 0;
         cameraX = 0; 
-        statusDiv.innerText = "WARNING!! 裏ボス出現！ジャンプボタンで光線を撃て！";
+        statusDiv.innerText = "WARNING!! 裏ボス出現！Jボタンで光線を撃て！";
     }
 
     function updateShooter() {
@@ -385,7 +393,7 @@
     }
 
     function drawShooter() {
-        // 背景 (縦スクロールっぽく見せるため、背景画像を少しずつ動かす処理を入れると本格的ですが、今回は固定で軽量化)
+        // 背景
         if(spaceBgImg.complete && spaceBgImg.naturalWidth !== 0){
             ctx.drawImage(spaceBgImg, 0, 0, canvas.width, canvas.height);
         } else {
