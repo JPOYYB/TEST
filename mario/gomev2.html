@@ -36,6 +36,20 @@
 
 // --- ここを追加 ---
 
+// 現在の時間を取得（例：1703560000）
+const timestamp = new Date().getTime(); 
+
+const playerImg = new Image();
+// 画像ファイル名の後ろに "?数字" をつけることで、毎回新しい画像として読み込ませる
+playerImg.src = "icon1.jpg?" + timestamp; 
+
+const blockImg = new Image();
+blockImg.src = "icon2.jpg?" + timestamp;
+
+const enemyImg = new Image();
+enemyImg.src = "icon3.jpg?" + timestamp;
+// ----------------
+
 const playerImg = new Image();
 
 playerImg.src = "icon1.jpg"; // 画像ファイル名と同じにする
@@ -523,3 +537,4 @@ enemyImg.src = "icon3.jpg";  // 画像ファイル名と同じにする
 </body>
 
 </html>
+
