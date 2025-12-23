@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>マリオ風ゲームDX - 最終決戦</title>
+    <title>マリオ風ゲームDX - パワーアップ編</title>
     <style>
         body { margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; background: #222; color: white; font-family: sans-serif; flex-direction: column;}
         canvas { background: #87CEEB; border: 2px solid #555; }
@@ -11,7 +11,7 @@
 </head>
 <body>
     <canvas id="gameCanvas" width="800" height="400"></canvas>
-    <div id="status">矢印キーで移動、スペースでジャンプ。最奥のボスを倒せ！</div>
+    <div id="status">矢印キーで移動、スペースでジャンプ。ハテナブロックを叩け！</div>
 
 <script>
     const canvas = document.getElementById("gameCanvas");
@@ -19,37 +19,43 @@
     const statusDiv = document.getElementById("status");
 
     // --- 画像の準備 ---
-    // キャッシュ対策のためにタイムスタンプを付与
     const timestamp = new Date().getTime();
     const playerImg = new Image(); playerImg.src = "icon1.jpg?" + timestamp;
     const blockImg = new Image();  blockImg.src = "icon2.jpg?" + timestamp;
     const enemyImg = new Image();  enemyImg.src = "icon3.jpg?" + timestamp;
-    // ★追加：ボスの画像★
     const bossImg = new Image();   bossImg.src = "icon4.jpg?" + timestamp;
+    // ★追加画像★
+    const qBlockImg = new Image(); qBlockImg.src = "icon_qblock.jpg?" + timestamp; // ハテナブロック
+    const emptyBlockImg = new Image(); emptyBlockImg.src = "icon_empty.jpg?" + timestamp; // 空ブロック
+    const mushroomImg = new Image(); mushroomImg.src = "icon_mushroom.jpg?" + timestamp; // キノコ
 
     // --- ゲーム設定 ---
     let gameState = "playing";
     let cameraX = 0;
-    const STAGE_WIDTH = 2200; // ステージを少し延長
+    const STAGE_WIDTH = 2200;
 
     // --- オブジェクト定義 ---
     const player = {
-        x: 50, y: 200, width: 30, height: 30,
-        dx: 0, dy: 0, speed: 5, jumpPower: -13, gravity: 0.6, grounded: false
+        x: 50, y: 200, 
+        width: 30, height: 30, // 現在のサイズ
+        normalW: 30, normalH: 30, // 通常サイズ
+        bigW: 40, bigH: 50,       // 巨大化サイズ
+        dx: 0, dy: 0, speed: 5, jumpPower: -13, gravity: 0.6, grounded: false,
+        isBig: false,       // ★巨大化フラグ★
+        invulnerable: 0     // ★無敵タイマー★
     };
 
-    // ★変更：ゴール（最初は非表示）★
     const goal = { x: 2000, y: 250, w: 50, h: 100, color: "gold", active: false };
 
-    const platforms = [
-        { x: 0, y: 350, w: 2200, h: 50 }, // 長い床
-        { x: 300, y: 250, w: 100, h: 20 },
-        { x: 500, y: 180, w: 100, h: 20 },
-        { x: 750, y: 250, w: 200, h: 20 },
-        { x: 1100, y: 150, w: 100, h: 20 },
-        { x: 1300, y: 250, w: 100, h: 20 },
-        // ボス戦用の広い足場
-        { x: 1500, y: 300, w: 500, h: 50 } 
+    // ブロック定義（typeとhasItemを追加）
+    let platforms = [
+        { x: 0, y: 350, w: 2200, h: 50, type: "normal" },
+        { x: 300, y: 250, w: 50, h: 50, type: "questionBlock", hasItem: true }, // ★ハテナブロックに変更★
+        { x: 500, y: 180, w: 100, h: 20, type: "normal" },
+        { x: 750, y: 250, w: 200, h: 20, type: "normal" },
+        { x: 1100, y: 150, w: 100, h: 20, type: "normal" },
+        { x: 1300, y: 250, w: 100, h: 20, type: "normal" },
+        { x: 1500, y: 300, w: 500, h: 50, type: "normal" } // ボスの土台
     ];
 
     let enemies = [
@@ -58,16 +64,13 @@
         { x: 1200, y: 320, width: 30, height: 30, dx: -3, alive: true, startX: 1200 }
     ];
 
-    // ★追加：ボス定義★
     let boss = {
-        x: 1700, y: 200,         // 初期位置
-        width: 100, height: 100, // ザコよりデカい
-        dx: 3, hp: 5,            // 体力5
-        alive: true, invulnerable: 0, isActive: false,
-        startX: 1550, endX: 1850, // 移動範囲
-        attackTimer: 0,          // 攻撃用タイマー
-        fireballs: []            // 火の玉リスト
+        x: 1700, y: 200, width: 100, height: 100, dx: 3, hp: 5, alive: true, invulnerable: 0, isActive: false,
+        startX: 1550, endX: 1850, attackTimer: 0, fireballs: []
     };
+
+    // ★アイテム管理配列★
+    let items = [];
 
     const keys = {};
     window.addEventListener("keydown", (e) => {
@@ -77,23 +80,89 @@
     window.addEventListener("keyup", (e) => keys[e.code] = false);
 
 
+    // --- 関数定義 ---
+
+    // 汎用衝突判定
+    function checkCollision(r1, r2) {
+        return (r1.x < r2.x + (r2.w||r2.width) && r1.x + r1.width > r2.x && r1.y < r2.y + (r2.h||r2.height) && r1.y + r1.height > r2.y);
+    }
+
+    // ★被ダメージ処理★
+    function takeDamage() {
+        if (player.invulnerable > 0) return; // 無敵中なら何もしない
+
+        if (player.isBig) {
+            // 巨大化状態なら元に戻る
+            player.isBig = false;
+            player.y += (player.bigH - player.normalH); // 足元の位置を合わせる
+            player.width = player.normalW;
+            player.height = player.normalH;
+            player.invulnerable = 90; // 1.5秒無敵
+            statusDiv.innerText = "小さくなった！少しの間無敵だ！";
+        } else {
+            // 通常状態ならゲームオーバー
+            gameState = "gameOver";
+            statusDiv.innerText = "やられた... (スペースでリトライ)";
+        }
+    }
+
+    // ★キノコ出現★
+    function spawnMushroom(x, y) {
+        items.push({
+            x: x, y: y - 30, width: 30, height: 30, dx: 2, dy: 0, gravity: 0.6, type: "mushroom"
+        });
+    }
+
+    // ゲームリセット
+    function resetGame() {
+        player.x = 50; player.y = 200; player.dy = 0; cameraX = 0; gameState = "playing";
+        // プレイヤー状態リセット
+        player.isBig = false; player.width = player.normalW; player.height = player.normalH; player.invulnerable = 0;
+        
+        statusDiv.innerText = "矢印キーで移動、スペースでジャンプ。ハテナブロックを叩け！";
+        enemies.forEach(e => { e.x = e.startX; e.alive = true; });
+        goal.active = false;
+        boss = { x: 1700, y: 200, width: 100, height: 100, dx: 3, hp: 5, alive: true, invulnerable: 0, isActive: false, startX: 1550, endX: 1850, attackTimer: 0, fireballs: [] };
+        
+        // ブロックとアイテムのリセット
+        platforms[1].hasItem = true; // ハテナブロックの中身を戻す
+        items = []; // アイテムを空にする
+    }
+
+
     // --- ゲームロジック ---
     function update() {
         if (gameState !== "playing") return;
 
-        // 1. プレイヤー移動
+        // 1. プレイヤーの更新
         if (keys["ArrowLeft"]) player.dx = -player.speed;
         else if (keys["ArrowRight"]) player.dx = player.speed;
         else player.dx = 0;
         if (keys["Space"] && player.grounded) { player.dy = player.jumpPower; player.grounded = false; }
         player.dy += player.gravity; player.x += player.dx; player.y += player.dy; player.grounded = false;
+        
+        if (player.invulnerable > 0) player.invulnerable--; // 無敵時間減少
 
-        // 2. 地形判定
+        // 2. 地形判定（★バグ修正＆ハテナブロック処理★）
         platforms.forEach(plat => {
             if (checkCollision(player, plat)) {
-                if (player.dy > 0 && player.y + player.height < plat.y + player.dy + 5) {
+                // 上下方向のめり込み量を計算
+                const overlapBottom = (player.y + player.height) - plat.y;
+                const overlapTop = (plat.y + plat.h) - player.y;
+
+                // 着地判定：落下中、かつ足元のめり込みが浅い場合（バグ修正：閾値を固定化）
+                if (player.dy > 0 && overlapBottom > 0 && overlapBottom <= 16) {
                     player.y = plat.y - player.height; player.dy = 0; player.grounded = true;
-                } else if (player.dy < 0) { player.y = plat.y + plat.h; player.dy = 0; }
+                }
+                // 頭打ち判定：上昇中、かつ頭のめり込みが浅い場合
+                else if (player.dy < 0 && overlapTop > 0 && overlapTop <= 16) {
+                    player.y = plat.y + plat.h; player.dy = 0;
+                    // ★ハテナブロックを叩いた時の処理★
+                    if (plat.type === "questionBlock" && plat.hasItem) {
+                        plat.hasItem = false; // 中身を空にする
+                        spawnMushroom(plat.x, plat.y); // キノコを出す
+                    }
+                }
             }
         });
 
@@ -101,7 +170,31 @@
         if (player.x > cameraX + canvas.width / 2) cameraX = player.x - canvas.width / 2;
         cameraX = Math.max(0, Math.min(cameraX, STAGE_WIDTH - canvas.width));
 
-        // 4. ザコ敵
+        // ★ 4. アイテムの更新と取得 ★
+        for(let i = items.length - 1; i >= 0; i--){
+            let item = items[i];
+            item.dy += item.gravity; item.x += item.dx; item.y += item.dy;
+            
+            // 簡易的な床・壁判定
+            if(item.y + item.height > 350) { item.y = 350 - item.height; item.dy = 0; }
+            platforms.forEach(plat => { // ブロックとの横衝突で反転
+                if(checkCollision(item, plat) && item.y + item.height > plat.y + 5) item.dx *= -1;
+            });
+
+            // プレイヤーとの接触
+            if(checkCollision(player, item)){
+                if(item.type === "mushroom" && !player.isBig){
+                    player.isBig = true;
+                    player.y -= (player.bigH - player.normalH); // 足元基準で大きくなる
+                    player.width = player.bigW;
+                    player.height = player.bigH;
+                    statusDiv.innerText = "巨大化！ 1回なら当たっても大丈夫！";
+                }
+                items.splice(i, 1); // アイテム削除
+            }
+        }
+
+        // 5. ザコ敵
         enemies.forEach(enemy => {
             if (!enemy.alive) return;
             enemy.x += enemy.dx;
@@ -110,83 +203,48 @@
                 if (player.dy > 0 && player.y + player.height < enemy.y + enemy.height / 2) {
                     enemy.alive = false; player.dy = -8;
                 } else {
-                    gameState = "gameOver"; statusDiv.innerText = "ザコ敵にやられた... (スペースでリトライ)";
+                    takeDamage(); // ★被ダメージ処理に変更★
                 }
             }
         });
 
-        // ★ 5. ボス戦ロジック ★
+        // 6. ボス戦ロジック
         if (!boss.isActive && cameraX > 1300) boss.isActive = true;
-
         if (boss.alive && boss.isActive) {
-            // 移動
-            boss.x += boss.dx;
-            if (boss.x < boss.startX || boss.x > boss.endX) boss.dx *= -1;
+            boss.x += boss.dx; if (boss.x < boss.startX || boss.x > boss.endX) boss.dx *= -1;
             if (boss.invulnerable > 0) boss.invulnerable--;
-
-            // 攻撃（火を吐く）
             boss.attackTimer++;
-            if (boss.attackTimer > 100) { // 約1.5秒ごと
+            if (boss.attackTimer > 100) {
                 boss.attackTimer = 0;
-                // プレイヤーのいる方向に向かって火の玉を発射
                 const direction = player.x < boss.x ? -1 : 1;
-                boss.fireballs.push({
-                    x: boss.x + boss.width/2, y: boss.y + boss.height/2,
-                    width: 20, height: 20, dx: 6 * direction, color: "orange"
-                });
+                boss.fireballs.push({ x: boss.x + boss.width/2, y: boss.y + boss.height/2, width: 20, height: 20, dx: 6 * direction, color: "orange" });
             }
-
-            // プレイヤーとの接触（踏みつけ判定）
             if (checkCollision(player, boss)) {
                 if (boss.invulnerable === 0) {
                     if (player.dy > 0 && player.y + player.height < boss.y + boss.height / 2) {
                         boss.hp--; player.dy = -10; boss.invulnerable = 60;
                         statusDiv.innerText = "ボスに命中！ 残りHP: " + boss.hp;
-                        if (boss.hp <= 0) {
-                            boss.alive = false;
-                            goal.active = true; // ゴール出現！
-                            statusDiv.innerText = "ボス撃破！ ゴールへの道が開かれた！";
-                        }
+                        if (boss.hp <= 0) { boss.alive = false; goal.active = true; statusDiv.innerText = "ボス撃破！ ゴールへの道が開かれた！"; }
                     } else {
-                        gameState = "gameOver"; statusDiv.innerText = "ボスに接触した... (スペースでリトライ)";
+                        takeDamage(); // ★被ダメージ処理に変更★
                     }
                 }
             }
         }
 
-        // ★ 火の玉の更新と判定 ★
+        // 火の玉
         for(let i = boss.fireballs.length - 1; i >= 0; i--){
-            const fb = boss.fireballs[i];
-            fb.x += fb.dx;
-            if(checkCollision(player, fb)){
-                gameState = "gameOver"; statusDiv.innerText = "火の玉に当たった... (スペースでリトライ)";
-            }
-            // 画面外に出たら削除
+            const fb = boss.fireballs[i]; fb.x += fb.dx;
+            if(checkCollision(player, fb)) takeDamage(); // ★被ダメージ処理に変更★
             if(fb.x < cameraX - 100 || fb.x > cameraX + canvas.width + 100) boss.fireballs.splice(i, 1);
         }
 
-        // 6. ゴール判定（ボス撃破後のみ有効）
-        if (goal.active && checkCollision(player, goal)) {
-            gameState = "cleared";
-            statusDiv.innerText = "STAGE CLEAR!! おめでとう！";
-        }
-        
+        // 7. ゴール・落下判定
+        if (goal.active && checkCollision(player, goal)) { gameState = "cleared"; statusDiv.innerText = "STAGE CLEAR!! おめでとう！"; }
         if (player.y > canvas.height) { gameState = "gameOver"; statusDiv.innerText = "落下... (スペースでリトライ)"; }
         if (player.x < 0) player.x = 0;
     }
 
-    function checkCollision(r1, r2) {
-        return (r1.x < r2.x + (r2.w||r2.width) && r1.x + r1.width > r2.x && r1.y < r2.y + (r2.h||r2.height) && r1.y + r1.height > r2.y);
-    }
-
-    function resetGame() {
-        player.x = 50; player.y = 200; player.dy = 0; cameraX = 0; gameState = "playing";
-        statusDiv.innerText = "矢印キーで移動、スペースでジャンプ。最奥のボスを倒せ！";
-        enemies.forEach(e => { e.x = e.startX; e.alive = true; });
-        // ボスとゴールのリセット
-        goal.active = false;
-        boss = { x: 1700, y: 200, width: 100, height: 100, dx: 3, hp: 5, alive: true, invulnerable: 0, isActive: false, startX: 1550, endX: 1850, attackTimer: 0, fireballs: [] };
-    }
 
     // --- 描画処理 ---
     function draw() {
@@ -194,34 +252,34 @@
         ctx.save();
         ctx.translate(-cameraX, 0);
 
-        // ゴール（アクティブな時だけ表示）
-        if(goal.active){
-            ctx.fillStyle = goal.color; ctx.fillRect(goal.x, goal.y, goal.w, goal.h);
-        }
+        if(goal.active){ ctx.fillStyle = goal.color; ctx.fillRect(goal.x, goal.y, goal.w, goal.h); }
 
+        // ブロック描画（種類によって画像を変更）
         platforms.forEach(plat => {
             if(plat.x + plat.w > cameraX && plat.x < cameraX + canvas.width){
-                ctx.drawImage(blockImg, plat.x, plat.y, plat.w, plat.h);
+                let img = blockImg;
+                if(plat.type === "questionBlock") img = plat.hasItem ? qBlockImg : emptyBlockImg;
+                ctx.drawImage(img, plat.x, plat.y, plat.w, plat.h);
             }
         });
 
-        enemies.forEach(enemy => {
-            if (enemy.alive) ctx.drawImage(enemyImg, enemy.x, enemy.y, enemy.width, enemy.height);
-        });
+        // ★アイテム描画★
+        items.forEach(item => ctx.drawImage(mushroomImg, item.x, item.y, item.width, item.height));
 
-        // ボス描画
+        enemies.forEach(enemy => { if (enemy.alive) ctx.drawImage(enemyImg, enemy.x, enemy.y, enemy.width, enemy.height); });
+
         if (boss.alive) {
             if (boss.invulnerable > 0) ctx.globalAlpha = 0.5;
             ctx.drawImage(bossImg, boss.x, boss.y, boss.width, boss.height);
             ctx.globalAlpha = 1.0;
         }
-        // 火の玉描画（オレンジ色の丸）
-        boss.fireballs.forEach(fb => {
-            ctx.fillStyle = fb.color;
-            ctx.beginPath(); ctx.arc(fb.x + fb.width/2, fb.y + fb.height/2, fb.width/2, 0, Math.PI*2); ctx.fill();
-        });
+        boss.fireballs.forEach(fb => { ctx.fillStyle = fb.color; ctx.beginPath(); ctx.arc(fb.x + fb.width/2, fb.y + fb.height/2, fb.width/2, 0, Math.PI*2); ctx.fill(); });
 
+        // プレイヤー描画（無敵時は半透明）
+        if (player.invulnerable > 0) ctx.globalAlpha = 0.5;
+        // 現在のサイズで描画（巨大化していれば大きく表示される）
         ctx.drawImage(playerImg, player.x, player.y, player.width, player.height);
+        ctx.globalAlpha = 1.0;
         ctx.restore();
 
         if (gameState === "gameOver") {
@@ -239,5 +297,3 @@
 </script>
 </body>
 </html>
-
-
