@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <title>Bar Manager vs Demon System (Prototype)</title>
+  <link rel="stylesheet" href="./styles.css"/>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Bar Manager vs Demon System（プロト）</h1>
+      <div class="muted">
+        1日1手 → 結果 → <span class="kbd">次の日へ</span>。<br/>
+        魔王の柱（恐怖/兵站/呪い）を全部0にすると勝ち。
+      </div>
+
+      <div class="row" style="margin-top:12px;">
+        <div class="pill"><span>Day</span><span id="day">1</span></div>
+        <div class="pill"><span>Gold / Rep</span><span id="stat">50 / 0</span></div>
+        <div class="pill"><span>状態</span><span id="phaseTxt">行動選択</span></div>
+      </div>
+
+      <div style="margin-top:12px;">
+        <div class="row">
+          <div>
+            <div class="pill"><span>恐怖</span><span id="fearTxt">80</span></div>
+            <div class="bar"><div class="fill" id="fearFill"></div></div>
+          </div>
+          <div>
+            <div class="pill"><span>兵站</span><span id="supTxt">80</span></div>
+            <div class="bar"><div class="fill" id="supFill"></div></div>
+          </div>
+          <div>
+            <div class="pill"><span>呪い</span><span id="curTxt">80</span></div>
+            <div class="bar"><div class="fill" id="curFill"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="btns">
+        <button id="aCook">🍢 仕込み（STOP）→ 呪い↓</button>
+        <button id="aTalk">🗣 接客（3択）→ 恐怖↓</button>
+        <button id="aSupply">📦 仕入れ（ルート最適化）→ 兵站↓ ※運なし</button>
+      </div>
+
+      <div class="btns">
+        <button id="skip" class="danger">閉店（ペナルティ）</button>
+        <button id="nextDay" class="good" style="display:none;">次の日へ</button>
+        <button id="reset" class="good">リセット</button>
+      </div>
+
+      <div class="panel" id="mini">
+        <div class="big" id="miniTitle">今日の行動を選べ</div>
+        <div class="muted" id="miniDesc">行動を1つ実行すると「次の日へ」が押せます。</div>
+        <div id="miniBody" style="margin-top:10px;"></div>
+      </div>
+
+      <h2 class="h2">ログ</h2>
+      <div class="log" id="log"></div>
+    </div>
+  </div>
+
+  <script src="./data.js"></script>
+  <script src="./game.js"></script>
+</body>
+</html>
