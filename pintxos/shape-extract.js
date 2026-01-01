@@ -1,459 +1,482 @@
-/* shape-extract.js v9
-   - mask PNG の alpha から輪郭抽出 → Matter.js 用ポリゴン化
-   - 最大連結成分のみ採用（ゴミ点無視）
-   - 失敗時は hull → それも無理なら rect
-   - sprite の xOffset/yOffset を必ず保持
-*/
-(function () {
-  const cache = new Map();
+/* shape-extract.js  (Matter.js 読み込み後に使う) */
+(() => {
+  const VERSION = "v10-mask-centroid-crop";
 
-  function ensureDecomp() {
-    try {
-      if (window.Matter?.Common?.setDecomp && window.decomp) {
-        window.Matter.Common.setDecomp(window.decomp);
-      }
-    } catch (_) {}
-  }
+  // ===== Utils =====
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
-  function loadImage(src) {
+  function loadImage(url) {
     return new Promise((resolve, reject) => {
       const img = new Image();
+      img.crossOrigin = "anonymous"; // GitHub Pages想定
       img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error("Image load error: " + src));
-      img.src = src;
+      img.onerror = () => reject(new Error("Image load failed: " + url));
+      img.src = url;
     });
   }
 
-  function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+  function drawToCanvas(img) {
+    const c = document.createElement("canvas");
+    c.width = img.naturalWidth || img.width;
+    c.height = img.naturalHeight || img.height;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    ctx.clearRect(0, 0, c.width, c.height);
+    ctx.drawImage(img, 0, 0);
+    return { c, ctx };
+  }
+
+  function alphaBBox(imgData, w, h, thr) {
+    let minX = w, minY = h, maxX = -1, maxY = -1;
+    let solid = 0;
+    const data = imgData.data;
+    for (let y = 0; y < h; y++) {
+      const row = y * w * 4;
+      for (let x = 0; x < w; x++) {
+        const a = data[row + x * 4 + 3];
+        if (a > thr) {
+          solid++;
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX < 0) return null;
+    // 端を少し余裕持つ（輪郭欠け防止）
+    const pad = 1;
+    minX = clamp(minX - pad, 0, w - 1);
+    minY = clamp(minY - pad, 0, h - 1);
+    maxX = clamp(maxX + pad, 0, w - 1);
+    maxY = clamp(maxY + pad, 0, h - 1);
+
+    return {
+      x: minX,
+      y: minY,
+      w: (maxX - minX + 1),
+      h: (maxY - minY + 1),
+      solid
+    };
+  }
+
+  function cropCanvas(srcCanvas, bbox) {
+    const c = document.createElement("canvas");
+    c.width = bbox.w;
+    c.height = bbox.h;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    ctx.clearRect(0, 0, c.width, c.height);
+    ctx.drawImage(srcCanvas, bbox.x, bbox.y, bbox.w, bbox.h, 0, 0, bbox.w, bbox.h);
+    return { c, ctx };
+  }
+
+  // ===== Marching Squares (binary mask) => segments => loops =====
+  // point key as integer grid (x2,y2) to avoid float keys
+  function pKey(x2, y2) { return x2 + "," + y2; }
+  function pVal(key) {
+    const [x2, y2] = key.split(",").map(Number);
+    return { x: x2 / 2, y: y2 / 2 };
+  }
+
+  function marchingSquaresLoops(alpha, w, h, thr) {
+    // alpha: Uint8ClampedArray RGBA, but we only use A
+    const A = alpha;
+    const idxA = (x, y) => (y * w + x) * 4 + 3;
+
+    const isSolid = (x, y) => {
+      if (x < 0 || y < 0 || x >= w || y >= h) return false;
+      return A[idxA(x, y)] > thr;
+    };
+    const centerSolid = (x, y) => {
+      // sample near center pixel
+      const cx = clamp(Math.floor(x), 0, w - 1);
+      const cy = clamp(Math.floor(y), 0, h - 1);
+      return A[idxA(cx, cy)] > thr;
+    };
+
+    const adj = new Map(); // key -> Set(nei)
+    const addEdge = (k1, k2) => {
+      if (!adj.has(k1)) adj.set(k1, new Set());
+      if (!adj.has(k2)) adj.set(k2, new Set());
+      adj.get(k1).add(k2);
+      adj.get(k2).add(k1);
+    };
+
+    // cell loop
+    for (let y = 0; y < h - 1; y++) {
+      for (let x = 0; x < w - 1; x++) {
+        const a = isSolid(x, y) ? 1 : 0;
+        const b = isSolid(x + 1, y) ? 1 : 0;
+        const c = isSolid(x + 1, y + 1) ? 1 : 0;
+        const d = isSolid(x, y + 1) ? 1 : 0;
+        const code = (a) | (b << 1) | (c << 2) | (d << 3);
+        if (code === 0 || code === 15) continue;
+
+        // points as x2,y2
+        const L = { x2: 2 * x,     y2: 2 * y + 1 };
+        const T = { x2: 2 * x + 1, y2: 2 * y     };
+        const R = { x2: 2 * x + 2, y2: 2 * y + 1 };
+        const B = { x2: 2 * x + 1, y2: 2 * y + 2 };
+
+        const kL = pKey(L.x2, L.y2);
+        const kT = pKey(T.x2, T.y2);
+        const kR = pKey(R.x2, R.y2);
+        const kB = pKey(B.x2, B.y2);
+
+        // disambiguation for 5 / 10 using center
+        const cen = centerSolid(x + 0.5, y + 0.5);
+
+        switch (code) {
+          case 1:  addEdge(kL, kT); break;
+          case 2:  addEdge(kT, kR); break;
+          case 3:  addEdge(kL, kR); break;
+          case 4:  addEdge(kR, kB); break;
+          case 6:  addEdge(kT, kB); break;
+          case 7:  addEdge(kL, kB); break;
+          case 8:  addEdge(kB, kL); break;
+          case 9:  addEdge(kT, kB); break;
+          case 11: addEdge(kR, kB); break;
+          case 12: addEdge(kR, kL); break;
+          case 13: addEdge(kT, kR); break;
+          case 14: addEdge(kL, kT); break;
+
+          case 5:
+            // a & c solid
+            if (cen) { addEdge(kL, kT); addEdge(kR, kB); }
+            else     { addEdge(kT, kR); addEdge(kL, kB); }
+            break;
+
+          case 10:
+            // b & d solid
+            if (cen) { addEdge(kT, kR); addEdge(kL, kB); }
+            else     { addEdge(kL, kT); addEdge(kR, kB); }
+            break;
+
+          default:
+            // other cases are covered above
+            break;
+        }
+      }
+    }
+
+    // build loops from adjacency (degree should be 2 on contours)
+    const visitedEdge = new Set();
+    const loops = [];
+
+    const edgeKey = (a, b) => (a < b ? (a + "|" + b) : (b + "|" + a));
+
+    for (const [start, neis] of adj.entries()) {
+      for (const n of neis) {
+        const ek = edgeKey(start, n);
+        if (visitedEdge.has(ek)) continue;
+
+        // trace polyline
+        let curr = start;
+        let prev = null;
+        const poly = [pVal(curr)];
+
+        while (true) {
+          const neighbors = Array.from(adj.get(curr) || []);
+          let next = null;
+
+          if (prev === null) {
+            next = neighbors[0];
+          } else {
+            next = neighbors.find(k => k !== prev) || null;
+          }
+
+          if (!next) break;
+
+          visitedEdge.add(edgeKey(curr, next));
+          prev = curr;
+          curr = next;
+          poly.push(pVal(curr));
+
+          // close if back to start
+          if (curr === start) break;
+
+          // safety
+          if (poly.length > 5000) break;
+        }
+
+        if (poly.length >= 10 && curr === start) {
+          // remove last dup start
+          poly.pop();
+          loops.push(poly);
+        }
+      }
+    }
+
+    return loops;
+  }
 
   function polygonArea(pts) {
     let a = 0;
     for (let i = 0; i < pts.length; i++) {
-      const p = pts[i], q = pts[(i + 1) % pts.length];
-      a += (p.x * q.y - q.x * p.y);
+      const p = pts[i];
+      const q = pts[(i + 1) % pts.length];
+      a += p.x * q.y - q.x * p.y;
     }
     return a / 2;
   }
 
-  function resampleClosed(points, N) {
-    if (!points || points.length < 3) return points;
-    const ring = [];
-    for (const p of points) {
-      const prev = ring[ring.length - 1];
-      if (!prev || prev.x !== p.x || prev.y !== p.y) ring.push(p);
+  function polygonCentroid(pts) {
+    let a = 0, cx = 0, cy = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      const q = pts[(i + 1) % pts.length];
+      const cross = p.x * q.y - q.x * p.y;
+      a += cross;
+      cx += (p.x + q.x) * cross;
+      cy += (p.y + q.y) * cross;
     }
-    if (ring.length < 3) return ring;
-
-    const M = ring.length;
-    const cum = [0];
-    let perim = 0;
-    for (let i = 0; i < M; i++) {
-      perim += dist(ring[i], ring[(i + 1) % M]);
-      cum.push(perim);
+    a *= 0.5;
+    if (Math.abs(a) < 1e-6) {
+      // fallback: average
+      const n = pts.length;
+      const sx = pts.reduce((s, p) => s + p.x, 0);
+      const sy = pts.reduce((s, p) => s + p.y, 0);
+      return { x: sx / n, y: sy / n };
     }
-    if (perim <= 1e-6) return ring;
-
-    const step = perim / N;
-    const out = [];
-    let seg = 0;
-
-    for (let k = 0; k < N; k++) {
-      const target = k * step;
-      while (seg < M && cum[seg + 1] < target) seg++;
-      const a = ring[seg % M], b = ring[(seg + 1) % M];
-      const segLen = dist(a, b) || 1e-6;
-      const segStart = cum[seg];
-      const t = Math.min(1, Math.max(0, (target - segStart) / segLen));
-      out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
-    }
-    return out;
+    cx /= (6 * a);
+    cy /= (6 * a);
+    return { x: cx, y: cy };
   }
 
-  function erode(mask, W, H, iter) {
-    let m = mask;
-    for (let it = 0; it < iter; it++) {
-      const out = new Uint8Array(W * H);
-      for (let y = 1; y < H - 1; y++) {
-        for (let x = 1; x < W - 1; x++) {
-          const i = y * W + x;
-          if (!m[i]) continue;
-          let ok = 1;
-          for (let dy = -1; dy <= 1 && ok; dy++) {
-            for (let dx = -1; dx <= 1; dx++) {
-              if (!m[(y + dy) * W + (x + dx)]) { ok = 0; break; }
-            }
-          }
-          if (ok) out[i] = 1;
-        }
-      }
-      m = out;
-    }
-    return m;
-  }
+  // Ramer–Douglas–Peucker for closed polygon (run on open then close)
+  function rdp(points, epsilon) {
+    if (points.length < 3) return points;
 
-  function largestComponent(mask, W, H) {
-    const vis = new Uint8Array(W * H);
-    const neigh = [-1, 1, -W, W, -W - 1, -W + 1, W - 1, W + 1];
-    let bestCount = 0, bestIdxs = null, comps = 0;
-
-    for (let i = 0; i < W * H; i++) {
-      if (!mask[i] || vis[i]) continue;
-      comps++;
-      const q = [i];
-      vis[i] = 1;
-      const idxs = [];
-      while (q.length) {
-        const p = q.pop();
-        idxs.push(p);
-        const y = Math.floor(p / W), x = p - y * W;
-
-        for (const d of neigh) {
-          const n = p + d;
-          if (n < 0 || n >= W * H) continue;
-
-          // row wrap guard
-          if ((d === -1 || d === -W - 1 || d === W - 1) && x === 0) continue;
-          if ((d === 1 || d === -W + 1 || d === W + 1) && x === W - 1) continue;
-
-          if (mask[n] && !vis[n]) {
-            vis[n] = 1;
-            q.push(n);
-          }
-        }
-      }
-      if (idxs.length > bestCount) {
-        bestCount = idxs.length;
-        bestIdxs = idxs;
-      }
-    }
-
-    const out = new Uint8Array(W * H);
-    if (bestIdxs) for (const p of bestIdxs) out[p] = 1;
-    return { out, comps, bestCount };
-  }
-
-  function buildBoundary(mask, W, H) {
-    const boundary = new Uint8Array(W * H);
-    let sx = -1, sy = -1;
-    for (let y = 1; y < H - 1; y++) {
-      for (let x = 1; x < W - 1; x++) {
-        const idx = y * W + x;
-        if (!mask[idx]) continue;
-        if (!mask[idx - 1] || !mask[idx + 1] || !mask[idx - W] || !mask[idx + W]) {
-          boundary[idx] = 1;
-          if (sy === -1 || y < sy || (y === sy && x < sx)) { sx = x; sy = y; }
-        }
-      }
-    }
-    return { boundary, sx, sy };
-  }
-
-  function traceMoore(boundary, W, H, sx, sy) {
-    const dirs = [
-      { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }, { x: -1, y: 1 },
-      { x: -1, y: 0 }, { x: -1, y: -1 }, { x: 0, y: -1 }, { x: 1, y: -1 }
-    ];
-    const dirIndex = (dx, dy) => {
-      for (let i = 0; i < 8; i++) if (dirs[i].x === dx && dirs[i].y === dy) return i;
-      return 0;
+    const sq = (v) => v * v;
+    const dist2PointToSeg = (p, a, b) => {
+      const vx = b.x - a.x, vy = b.y - a.y;
+      const wx = p.x - a.x, wy = p.y - a.y;
+      const c1 = vx * wx + vy * wy;
+      if (c1 <= 0) return sq(p.x - a.x) + sq(p.y - a.y);
+      const c2 = vx * vx + vy * vy;
+      if (c2 <= c1) return sq(p.x - b.x) + sq(p.y - b.y);
+      const t = c1 / c2;
+      const px = a.x + t * vx, py = a.y + t * vy;
+      return sq(p.x - px) + sq(p.y - py);
     };
 
-    let x = sx, y = sy;
-    let bx = sx - 1, by = sy;
-    const startX = x, startY = y;
-    const out = [];
-    const safety = W * H * 10;
-    let steps = 0;
-
-    do {
-      out.push({ x, y });
-      const bi = dirIndex(x - bx, y - by);
-      let found = false;
-      for (let k = 0; k < 8; k++) {
-        const idx = (bi + 1 + k) % 8;
-        const nx = x + dirs[idx].x, ny = y + dirs[idx].y;
-        if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
-        if (boundary[ny * W + nx]) {
-          const pb = (idx + 7) % 8;
-          bx = x + dirs[pb].x; by = y + dirs[pb].y;
-          x = nx; y = ny;
-          found = true;
-          break;
-        }
+    function simplify(pts) {
+      if (pts.length < 3) return pts;
+      let maxD = 0, idx = 0;
+      const a = pts[0], b = pts[pts.length - 1];
+      for (let i = 1; i < pts.length - 1; i++) {
+        const d = dist2PointToSeg(pts[i], a, b);
+        if (d > maxD) { maxD = d; idx = i; }
       }
-      if (!found) break;
-      if (++steps > safety) break;
-    } while (!(x === startX && y === startY));
+      if (maxD > epsilon * epsilon) {
+        const left = simplify(pts.slice(0, idx + 1));
+        const right = simplify(pts.slice(idx));
+        return left.slice(0, -1).concat(right);
+      }
+      return [a, b];
+    }
 
-    return out;
+    return simplify(points);
   }
 
-  function collectEdgePoints(mask, W, H, maxPts = 6000) {
-    const pts = [];
-    let step = 1;
-    const approx = W * H / 3;
-    if (approx > maxPts) step = Math.ceil(approx / maxPts);
+  // convex hull (monotonic chain) fallback
+  function convexHull(points) {
+    if (points.length < 3) return points;
 
-    let c = 0;
-    for (let y = 1; y < H - 1; y++) {
-      for (let x = 1; x < W - 1; x++) {
-        const idx = y * W + x;
-        if (!mask[idx]) continue;
-        if (!mask[idx - 1] || !mask[idx + 1] || !mask[idx - W] || !mask[idx + W]) {
-          if ((c++ % step) === 0) pts.push({ x, y });
-        }
+    const pts = points.slice().sort((p, q) => (p.x === q.x ? p.y - q.y : p.x - q.x));
+    const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+
+    const lower = [];
+    for (const p of pts) {
+      while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+      lower.push(p);
+    }
+    const upper = [];
+    for (let i = pts.length - 1; i >= 0; i--) {
+      const p = pts[i];
+      while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+      upper.push(p);
+    }
+    upper.pop(); lower.pop();
+    return lower.concat(upper);
+  }
+
+  function sampleSolidPoints(alpha, w, h, thr, step) {
+    const pts = [];
+    const idxA = (x, y) => (y * w + x) * 4 + 3;
+    for (let y = 0; y < h; y += step) {
+      for (let x = 0; x < w; x += step) {
+        if (alpha[idxA(x, y)] > thr) pts.push({ x, y });
       }
     }
     return pts;
   }
 
-  async function extract(maskPath, cfg = {}) {
-    if (cache.has(maskPath)) return cache.get(maskPath);
+  // ===== Main: prepare asset =====
+  const cache = new Map();
 
-    const promise = (async () => {
-      const out = { ok: false, reason: "", maskPath };
+  async function prepare({ textureUrl, maskUrl, targetMax = 140, alphaThr = 10, hitInset = 0.97, maxVerts = 72, debug = false }) {
+    const key = `${textureUrl}||${maskUrl}||${targetMax}||${alphaThr}||${hitInset}`;
+    if (cache.has(key)) return cache.get(key);
 
-      try {
-        const img = await loadImage(maskPath);
-        const iw = img.naturalWidth, ih = img.naturalHeight;
-        if (!iw || !ih) { out.reason = "natural size 0"; return out; }
+    const [texImg, maskImg] = await Promise.all([loadImage(textureUrl), loadImage(maskUrl)]);
+    const { c: texC } = drawToCanvas(texImg);
+    const { c: maskC, ctx: maskCtx } = drawToCanvas(maskImg);
 
-        const alphaThreshold = cfg.alphaThreshold ?? 1;
-        const nPoints = cfg.nPoints ?? 140;
-        const padPx = cfg.padPx ?? 2;
-        const analysisMax = cfg.analysisMax ?? 520;
-        const minContour = cfg.minContour ?? 24;
-        const erodePx = cfg.erodePx ?? 0;
+    const w0 = maskC.width, h0 = maskC.height;
+    const maskData = maskCtx.getImageData(0, 0, w0, h0);
+    const bbox = alphaBBox(maskData, w0, h0, alphaThr);
+    if (!bbox) throw new Error(`Mask has no solid pixels: ${maskUrl}`);
 
-        // full scan: bbox + centroid
-        const base = document.createElement("canvas");
-        base.width = iw; base.height = ih;
-        const bctx = base.getContext("2d", { willReadFrequently: true });
-        bctx.clearRect(0, 0, iw, ih);
-        bctx.drawImage(img, 0, 0);
+    const { c: maskCropC, ctx: maskCropCtx } = cropCanvas(maskC, bbox);
+    const maskCropData = maskCropCtx.getImageData(0, 0, bbox.w, bbox.h);
 
-        let imgData;
-        try { imgData = bctx.getImageData(0, 0, iw, ih); }
-        catch (e) { out.reason = "getImageData failed (tainted?)"; return out; }
+    // outer contour loops
+    let loops = marchingSquaresLoops(maskCropData.data, bbox.w, bbox.h, alphaThr);
 
-        const data = imgData.data;
-        let solid = 0, sumX = 0, sumY = 0;
-        let minX = iw, minY = ih, maxX = -1, maxY = -1;
+    // choose largest area loop
+    let poly = null;
+    if (loops.length > 0) {
+      loops.sort((a, b) => Math.abs(polygonArea(b)) - Math.abs(polygonArea(a)));
+      poly = loops[0];
+    }
 
-        for (let y = 0; y < ih; y++) {
-          for (let x = 0; x < iw; x++) {
-            const i = (y * iw + x) * 4;
-            const a = data[i + 3];
-            if (a > alphaThreshold) {
-              solid++; sumX += x; sumY += y;
-              if (x < minX) minX = x; if (y < minY) minY = y;
-              if (x > maxX) maxX = x; if (y > maxY) maxY = y;
-            }
-          }
-        }
-        if (solid < 60) { out.reason = "too few solid pixels (mask empty?)"; return out; }
+    // simplify contour
+    const maxDim = Math.max(bbox.w, bbox.h);
+    const eps = clamp(maxDim * 0.01, 0.8, 2.0); // だいたい1px前後
+    if (poly && poly.length > 8) {
+      // close -> simplify as open -> reclose
+      const open = poly.concat([poly[0]]);
+      const simp = rdp(open, eps);
+      simp.pop();
+      poly = simp;
+    }
 
-        const solidRatio = solid / (iw * ih);
-        const cx0 = sumX / solid, cy0 = sumY / solid;
-        const bboxW = maxX - minX + 1, bboxH = maxY - minY + 1;
-
-        const cropX = Math.max(0, minX - padPx);
-        const cropY = Math.max(0, minY - padPx);
-        const cropX2 = Math.min(iw - 1, maxX + padPx);
-        const cropY2 = Math.min(ih - 1, maxY + padPx);
-        const cropW = cropX2 - cropX + 1;
-        const cropH = cropY2 - cropY + 1;
-
-        // upscale analysis
-        const scale = analysisMax / Math.max(cropW, cropH);
-        const s = Math.min(12.0, Math.max(1.0, scale));
-        const W = Math.max(96, Math.round(cropW * s));
-        const H = Math.max(96, Math.round(cropH * s));
-        const inv = 1 / s;
-
-        const ac = document.createElement("canvas");
-        ac.width = W; ac.height = H;
-        const actx = ac.getContext("2d", { willReadFrequently: true });
-        actx.clearRect(0, 0, W, H);
-        actx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, W, H);
-
-        const aData = actx.getImageData(0, 0, W, H).data;
-        let mask = new Uint8Array(W * H);
-        let aSolid = 0;
-
-        for (let y = 0; y < H; y++) {
-          for (let x = 0; x < W; x++) {
-            const i = (y * W + x) * 4;
-            if (aData[i + 3] > alphaThreshold) {
-              mask[y * W + x] = 1;
-              aSolid++;
-            }
-          }
-        }
-        if (aSolid < 120) { out.reason = "cropped solid too small"; return out; }
-        if (erodePx > 0) mask = erode(mask, W, H, erodePx);
-
-        // keep only largest component
-        const cc = largestComponent(mask, W, H);
-        const compMask = cc.out;
-
-        // trace boundary
-        const { boundary, sx, sy } = buildBoundary(compMask, W, H);
-        let contour = null, contourLen = 0, usedHull = false;
-
-        if (sx !== -1) {
-          const c = traceMoore(boundary, W, H, sx, sy);
-          contourLen = c?.length ?? 0;
-          if (c && c.length >= minContour) {
-            contour = c.map(p => ({
-              x: (cropX + p.x * inv) - cx0,
-              y: (cropY + p.y * inv) - cy0
-            }));
-          }
-        }
-
-        // hull fallback
-        if (!contour) {
-          const Matter = window.Matter;
-          if (!Matter?.Vertices?.hull) {
-            out.reason = "contour too short (Vertices.hull missing)";
-            return out;
-          }
-          const edgePts = collectEdgePoints(compMask, W, H, 6000);
-          if (edgePts.length < 12) {
-            out.reason = "contour too short (edge pts too few)";
-            return out;
-          }
-          const hull = Matter.Vertices.hull(edgePts);
-          if (!hull || hull.length < 6) {
-            out.reason = "contour too short (hull failed)";
-            return out;
-          }
-          contour = hull.map(p => ({
-            x: (cropX + p.x * inv) - cx0,
-            y: (cropY + p.y * inv) - cy0
-          }));
-          contourLen = hull.length;
-          usedHull = true;
-        }
-
-        let pts = resampleClosed(contour, nPoints);
-        if (!pts || pts.length < 12) { out.reason = "resample failed"; return out; }
-        if (polygonArea(pts) > 0) pts.reverse(); // clockwise
-
-        out.ok = true;
-        out.pts = pts;
-        out.iw = iw; out.ih = ih;
-        out.bw = bboxW; out.bh = bboxH;
-        out.solidRatio = solidRatio;
-
-        // sprite offset: centroid / image size
-        out.xOffset = Math.max(0, Math.min(1, cx0 / iw));
-        out.yOffset = Math.max(0, Math.min(1, cy0 / ih));
-
-        out._dbg = {
-          version: "v9",
-          bboxW, bboxH, cropW, cropH,
-          analysisW: W, analysisH: H, analysisScale: s,
-          comps: cc.comps, bestCount: cc.bestCount,
-          contourLen, usedHull
-        };
-
-        return out;
-
-      } catch (e) {
-        out.reason = e.message || String(e);
-        return out;
+    // fallback to hull if contour unstable
+    let fallback = false;
+    let reason = "";
+    if (!poly || poly.length < 8) {
+      const step = clamp(Math.floor(maxDim / 90) + 1, 1, 4);
+      const pts = sampleSolidPoints(maskCropData.data, bbox.w, bbox.h, alphaThr, step);
+      const hull = convexHull(pts);
+      if (hull && hull.length >= 3) {
+        poly = hull;
+        fallback = true;
+        reason = "used hull fallback";
+      } else {
+        // last fallback: bbox rect (なるべく避けたいが保険)
+        poly = [
+          { x: 0, y: 0 },
+          { x: bbox.w, y: 0 },
+          { x: bbox.w, y: bbox.h },
+          { x: 0, y: bbox.h }
+        ];
+        fallback = true;
+        reason = "used rect fallback";
       }
-    })();
+    }
 
-    cache.set(maskPath, promise);
-    return promise;
+    // ensure consistent winding (Matterはどちらでも処理するが安定のため)
+    const area = polygonArea(poly);
+    if (area > 0) poly.reverse(); // clockwise
+
+    // centroid in crop coords
+    const cen = polygonCentroid(poly);
+
+    // translate to centroid-based local coords
+    let verts = poly.map(p => ({ x: p.x - cen.x, y: p.y - cen.y }));
+
+    // scale to targetMax (pixels == world units)
+    const scale = targetMax / Math.max(bbox.w, bbox.h);
+    verts = verts.map(v => ({ x: v.x * scale * hitInset, y: v.y * scale * hitInset }));
+
+    // limit vertices
+    if (verts.length > maxVerts) {
+      // re-simplify stronger if too many
+      const back = poly.concat([poly[0]]);
+      const stronger = rdp(back, eps * 2.0);
+      stronger.pop();
+      const c2 = polygonCentroid(stronger);
+      let vv = stronger.map(p => ({ x: (p.x - c2.x) * scale * hitInset, y: (p.y - c2.y) * scale * hitInset }));
+      if (vv.length >= 8) verts = vv;
+    }
+
+    // crop texture exactly same bbox (mask-based)
+    const { c: texCropC, ctx: texCropCtx } = cropCanvas(texC, bbox);
+    const texDataUrl = texCropC.toDataURL("image/png");
+
+    // sprite offsets: body position should correspond to centroid location within cropped texture
+    const xOffset = clamp(cen.x / bbox.w, 0, 1);
+    const yOffset = clamp(cen.y / bbox.h, 0, 1);
+
+    const solidRatio = bbox.solid / (bbox.w * bbox.h);
+
+    const asset = {
+      version: VERSION,
+      textureUrl,
+      maskUrl,
+      textureDataUrl: texDataUrl,
+      cropW: bbox.w,
+      cropH: bbox.h,
+      bboxX: bbox.x,
+      bboxY: bbox.y,
+      centroidX: cen.x,
+      centroidY: cen.y,
+      spriteScale: scale,
+      spriteOffsetX: xOffset,
+      spriteOffsetY: yOffset,
+      verts,
+      fallback,
+      reason,
+      solidRatio,
+      meta: { targetMax, alphaThr, hitInset, eps }
+    };
+
+    if (debug) console.log("ShapeExtract asset", asset);
+
+    cache.set(key, asset);
+    return asset;
   }
 
-  async function makeBody(texturePath, x, y, opt = {}) {
-    const Matter = window.Matter;
-    if (!Matter) throw new Error("Matter.js not loaded");
-    ensureDecomp();
+  function createBody(asset, x, y, opts = {}) {
+    const Bodies = Matter.Bodies;
+    const Body = Matter.Body;
 
-    const maskPath = opt.maskPath ?? texturePath;
-    const packed = await extract(maskPath, opt.shapeCfg ?? {});
-
-    const targetSize = opt.targetSize ?? 150;
-    const hitInset = opt.hitInset ?? 1.02; // 隙間を詰めたいのでデフォは少し攻める
-    const bw = packed?.bw || 1, bh = packed?.bh || 1;
-    const spriteScale = targetSize / Math.max(bw, bh);
-
-    const bodyOpts = Object.assign({
+    const base = {
       label: "Pintxo",
+      friction: 0.9,
+      frictionStatic: 1.0,
       restitution: 0.02,
-      friction: 0.95
-    }, opt.bodyOpts || {});
-
-    let body = null;
-    let usedFallback = false;
-    let reason = "";
-
-    if (packed && packed.ok) {
-      try {
-        body = Matter.Bodies.fromVertices(x, y, [packed.pts], bodyOpts, true);
-      } catch (e) {
-        usedFallback = true;
-        reason = "fromVertices threw: " + (e.message || e);
+      density: 0.0018,
+      slop: 0.01, // ここが地味に効く（接触の“遊び”を減らす）
+      render: {
+        sprite: {
+          texture: asset.textureDataUrl,
+          xScale: asset.spriteScale,
+          yScale: asset.spriteScale,
+          xOffset: asset.spriteOffsetX,
+          yOffset: asset.spriteOffsetY
+        }
       }
-    } else {
-      usedFallback = true;
-      reason = packed?.reason || "extract failed";
-    }
-
-    if (!body) {
-      // 最終手段
-      body = Matter.Bodies.rectangle(x, y, targetSize, targetSize, bodyOpts);
-      body.__forceRect = true;
-      usedFallback = true;
-      if (!reason) reason = "rect fallback";
-    }
-
-    // collider scale（これが隙間の最重要因子）
-    Matter.Body.scale(body, spriteScale * hitInset, spriteScale * hitInset);
-
-    // ★sprite は丸ごと上書きしない（offsetを消さない）
-    body.render = body.render || {};
-    body.render.sprite = body.render.sprite || {};
-    Object.assign(body.render.sprite, {
-      texture: texturePath,
-      xScale: spriteScale,
-      yScale: spriteScale,
-      xOffset: packed?.xOffset ?? 0.5,
-      yOffset: packed?.yOffset ?? 0.5
-    });
-
-    // DEBUG情報（index.htmlはこれを読む）
-    body.__dbg = {
-      tex: texturePath,
-      mask: maskPath,
-      fallbackBool: usedFallback,
-      fallback: usedFallback ? "true" : "false",
-      reason: usedFallback ? reason : "-",
-      solidRatio: packed?.solidRatio ?? 0,
-      spriteScale,
-      hitInset,
-      xOffset: body.render.sprite.xOffset,
-      yOffset: body.render.sprite.yOffset,
-      verts: body.vertices?.length ?? 0,
-      parts: body.parts?.length ?? 0,
-      hasDecomp: !!window.decomp,
-      forcedRect: !!body.__forceRect,
-      meta: packed?._dbg || null,
-      version: "v9"
     };
+
+    const body = Bodies.fromVertices(x, y, [asset.verts], { ...base, ...opts }, true);
+
+    // compound のとき sprite を1回だけ描画する（パーツ描画を消す）
+    if (body && body.parts && body.parts.length > 1) {
+      for (let i = 1; i < body.parts.length; i++) {
+        body.parts[i].render.visible = false;
+      }
+    }
+
+    // 念のため
+    if (body) Body.setPosition(body, { x, y });
 
     return body;
   }
 
   window.ShapeExtract = {
-    VERSION: "v9",
-    extract,
-    makeBody
+    version: VERSION,
+    prepare,
+    createBody
   };
 })();
