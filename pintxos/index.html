@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Pintxos Tower</title>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
@@ -13,19 +13,38 @@
     canvas { display: block; position: fixed; top: 0; left: 0; z-index: 0; }
     #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
     #score-board { position: absolute; top: 20px; left: 20px; font-size: 24px; font-weight: bold; color: #333; text-shadow: 2px 2px 0px white; }
-    #controls { position: absolute; bottom: 30px; left: 0; width: 100%; height: 90px; display: flex; justify-content: center; align-items: center; gap: 20px; pointer-events: auto; }
-    .control-btn { width: 60px; height: 60px; background: rgba(255,255,255,0.9); border: 2px solid #888; border-radius: 50%; font-size: 24px; cursor: pointer; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 5px rgba(0,0,0,0.2); user-select: none; -webkit-user-select: none; }
+
+    #controls {
+      position: absolute; bottom: 30px; left: 0; width: 100%; height: 90px;
+      display: flex; justify-content: center; align-items: center; gap: 20px;
+      pointer-events: auto;
+    }
+    .control-btn {
+      width: 60px; height: 60px;
+      background: rgba(255,255,255,0.9);
+      border: 2px solid #888; border-radius: 50%;
+      font-size: 24px; cursor: pointer;
+      display: flex; justify-content: center; align-items: center;
+      box-shadow: 0 4px 5px rgba(0,0,0,0.2);
+      user-select: none; -webkit-user-select: none;
+    }
     .control-btn:active { background: #ccc; transform: translateY(2px); }
     #btn-drop { width: 80px; height: 80px; background: #ff4757; color: white; border: none; font-size: 32px; }
-    .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.95); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 20; pointer-events: auto; }
+
+    .overlay {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(255,255,255,0.95);
+      display: flex; flex-direction: column; justify-content: center; align-items: center;
+      z-index: 20; pointer-events: auto;
+    }
     .hidden { display: none !important; }
     button.primary-btn { padding: 15px 40px; font-size: 18px; background: #2ecc71; color: white; border: none; border-radius: 30px; margin-top: 15px; cursor: pointer; }
     #ranking-list { padding: 0; list-style: none; margin-top:10px; }
     #ranking-list li { margin: 5px 0; border-bottom: 1px solid #ddd; padding: 5px; width: 220px; display:flex; justify-content:space-between; }
   </style>
 </head>
-<body>
 
+<body>
   <div id="ui-layer">
     <div id="score-board">SCORE: <span id="score-val">0</span></div>
     <div id="controls" class="hidden">
@@ -60,7 +79,7 @@
   </div>
 
 <script>
-  // poly-decomp を Matter.js の fromVertices で使えるように
+  // poly-decomp を Matter.js に渡す（凹形状の分解に必須）
   window.decomp = decomp;
 
   const Engine = Matter.Engine,
@@ -79,187 +98,219 @@
   let score = 0;
 
   const IMAGES = [];
-  for(let i=1; i<=11; i++) IMAGES.push(`./img/${i}.png`);
+  for (let i = 1; i <= 11; i++) IMAGES.push(`./img/${i}.png`);
 
   let w = window.innerWidth;
   let h = window.innerHeight;
 
-  // ====== 透過PNG(アルファ) → 輪郭ポリゴン抽出（B方式） ======
-  const shapeCache = new Map();
+  // ===== 形状抽出設定（ここだけ触ればチューニング可能） =====
+  const SHAPE_CFG = {
+    threshold: 30,      // 半透明の縁を切る：薄い縁が多いなら上げる(30→40)、欠けるなら下げる(30→20)
+    sampleScale: 0.40,  // 輪郭抽出の解像度：精密にしたいなら上げる(0.40→0.50)、重いなら下げる(0.40→0.30)
+    simplifyEps: 1.4,   // 輪郭の間引き：細部を残すなら下げる(1.4→1.0)、軽くするなら上げる(1.4→2.0)
+    maxVertices: 220    // 最大頂点数：精密にしたいなら増やす(220→300)、重いなら減らす(220→140)
+  };
 
-  function loadImage(src){
-    return new Promise((resolve, reject)=>{
+  // 見た目サイズを統一（px相当）
+  const TARGET_SIZE = 115;  // ここを上げるとピンチョスが大きくなる
+  const HIT_INSET   = 0.96; // 当たり判定だけ少し小さく：空中衝突があるなら0.92、すり抜けるなら0.98
+
+  // ===== 透過PNG(アルファ) → 外周輪郭抽出 =====
+  const shapeCache = new Map(); // imgPath -> { pts, iw, ih }
+
+  function loadImage(src) {
+    return new Promise((resolve, reject) => {
       const img = new Image();
-      img.onload = ()=>resolve(img);
-      img.onerror = (e)=>reject(e);
+      img.onload = () => resolve(img);
+      img.onerror = reject;
       img.src = src;
     });
   }
 
-  function polygonArea(pts){
-    let a=0;
-    for(let i=0;i<pts.length;i++){
-      const p=pts[i], q=pts[(i+1)%pts.length];
-      a += (p.x*q.y - q.x*p.y);
+  function polygonArea(pts) {
+    let a = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i], q = pts[(i + 1) % pts.length];
+      a += (p.x * q.y - q.x * p.y);
     }
-    return a/2;
+    return a / 2;
   }
 
-  // Moore neighbor tracing で外周輪郭を1本抽出（穴は無視）
-  function traceMoore(boundary, w, h, sx, sy){
+  // Moore neighbor tracing（外周輪郭のトレース）
+  function traceMoore(boundary, W, H, sx, sy) {
     const dirs = [
-      {x:1,y:0},{x:1,y:1},{x:0,y:1},{x:-1,y:1},
-      {x:-1,y:0},{x:-1,y:-1},{x:0,y:-1},{x:1,y:-1}
+      {x: 1, y: 0}, {x: 1, y: 1}, {x: 0, y: 1}, {x:-1, y: 1},
+      {x:-1, y: 0}, {x:-1, y:-1},{x: 0, y:-1},{x: 1, y:-1}
     ];
-    let x=sx, y=sy;
-    let bx=sx-1, by=sy;         // backtrack
-    const startX=x, startY=y;
-    const out=[];
-    const safety = w*h*8;
-    let steps=0;
+    let x = sx, y = sy;
+    let bx = sx - 1, by = sy; // backtrack
+    const startX = x, startY = y;
+    const out = [];
+    const safety = W * H * 8;
+    let steps = 0;
 
-    const dirIndex = (dx,dy)=>{
-      for(let i=0;i<dirs.length;i++) if(dirs[i].x===dx && dirs[i].y===dy) return i;
+    const dirIndex = (dx, dy) => {
+      for (let i = 0; i < dirs.length; i++) if (dirs[i].x === dx && dirs[i].y === dy) return i;
       return 0;
     };
 
-    do{
-      out.push({x,y});
-      let bi = dirIndex(x-bx, y-by);
-      let found=false;
-      for(let k=0;k<8;k++){
-        const idx = (bi+1+k)%8;
-        const nx=x+dirs[idx].x, ny=y+dirs[idx].y;
-        if(nx<0||nx>=w||ny<0||ny>=h) continue;
-        if(boundary[ny*w+nx]){
-          const pb=(idx+7)%8;
-          bx=x+dirs[pb].x; by=y+dirs[pb].y;
-          x=nx; y=ny;
-          found=true;
+    do {
+      out.push({x, y});
+      const bi = dirIndex(x - bx, y - by);
+      let found = false;
+
+      for (let k = 0; k < 8; k++) {
+        const idx = (bi + 1 + k) % 8;
+        const nx = x + dirs[idx].x, ny = y + dirs[idx].y;
+        if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
+        if (boundary[ny * W + nx]) {
+          const pb = (idx + 7) % 8;
+          bx = x + dirs[pb].x; by = y + dirs[pb].y;
+          x = nx; y = ny;
+          found = true;
           break;
         }
       }
-      if(!found) break;
+      if (!found) break;
+
       steps++;
-      if(steps>safety) break;
-    }while(!(x===startX && y===startY));
+      if (steps > safety) break;
+    } while (!(x === startX && y === startY));
 
     return out;
   }
 
-  // RDP 簡易（頂点を減らす）
-  function rdpSimplify(points, eps){
-    if(points.length<3) return points;
+  // RDP 簡易（頂点削減）
+  function rdpSimplify(points, eps) {
+    if (points.length < 3) return points;
 
-    const sq = (x)=>x*x;
-    const dist2 = (p,a,b)=>{
-      const vx=b.x-a.x, vy=b.y-a.y;
-      const wx=p.x-a.x, wy=p.y-a.y;
-      const c1 = vx*wx + vy*wy;
-      if (c1<=0) return sq(p.x-a.x)+sq(p.y-a.y);
-      const c2 = vx*vx+vy*vy;
-      if (c2<=c1) return sq(p.x-b.x)+sq(p.y-b.y);
-      const t=c1/c2;
-      const px=a.x+t*vx, py=a.y+t*vy;
-      return sq(p.x-px)+sq(p.y-py);
+    const sq = (x) => x * x;
+    const dist2 = (p, a, b) => {
+      const vx = b.x - a.x, vy = b.y - a.y;
+      const wx = p.x - a.x, wy = p.y - a.y;
+      const c1 = vx * wx + vy * wy;
+      if (c1 <= 0) return sq(p.x - a.x) + sq(p.y - a.y);
+      const c2 = vx * vx + vy * vy;
+      if (c2 <= c1) return sq(p.x - b.x) + sq(p.y - b.y);
+      const t = c1 / c2;
+      const px = a.x + t * vx, py = a.y + t * vy;
+      return sq(p.x - px) + sq(p.y - py);
     };
-    const eps2=eps*eps;
+    const eps2 = eps * eps;
 
-    function rec(pts){
-      let maxD=0, idx=-1;
-      const a=pts[0], b=pts[pts.length-1];
-      for(let i=1;i<pts.length-1;i++){
-        const d=dist2(pts[i],a,b);
-        if(d>maxD){ maxD=d; idx=i; }
+    function rec(pts) {
+      let maxD = 0, idx = -1;
+      const a = pts[0], b = pts[pts.length - 1];
+      for (let i = 1; i < pts.length - 1; i++) {
+        const d = dist2(pts[i], a, b);
+        if (d > maxD) { maxD = d; idx = i; }
       }
-      if(maxD>eps2){
-        const left=rec(pts.slice(0,idx+1));
-        const right=rec(pts.slice(idx));
-        return left.slice(0,-1).concat(right);
+      if (maxD > eps2) {
+        const left = rec(pts.slice(0, idx + 1));
+        const right = rec(pts.slice(idx));
+        return left.slice(0, -1).concat(right);
       }
-      return [a,b];
+      return [a, b];
     }
+
+    // 輪郭は閉曲線なので、簡易的にそのまま実行（過剰簡略化を避けたいなら後で強化可）
     return rec(points);
   }
 
-  function capVertices(pts, maxV){
-    if(pts.length<=maxV) return pts;
+  function capVertices(pts, maxV) {
+    if (pts.length <= maxV) return pts;
     const step = pts.length / maxV;
-    const out=[];
-    for(let i=0;i<maxV;i++) out.push(pts[Math.floor(i*step)]);
+    const out = [];
+    for (let i = 0; i < maxV; i++) out.push(pts[Math.floor(i * step)]);
     return out;
   }
 
-  // PNGアルファから外周輪郭を抽出し、中心基準のローカル頂点にして返す
-  async function verticesFromAlpha(imgPath, opt={}){
+  // 透過PNGのアルファから「外周輪郭」を抽出して Matter.js の頂点列にする
+  // ★中心は「画像中心」ではなく「実体（アルファ領域）の中心」に合わせる
+  async function extractShapeFromAlpha(imgPath) {
     if (shapeCache.has(imgPath)) return shapeCache.get(imgPath);
 
-    const threshold = opt.threshold ?? 18;        // 半透明縁を無視するなら上げる(例:25-40)
-    const sampleScale = opt.sampleScale ?? 0.25;  // 精密にしたいなら0.3〜0.4
-    const simplifyEps = opt.simplifyEps ?? 2.8;   // 大きいほど頂点減って軽い
-    const maxVertices = opt.maxVertices ?? 90;    // 精密にしたいなら120
-
     const img = await loadImage(imgPath);
+    const iw = img.naturalWidth, ih = img.naturalHeight;
 
-    const w0 = Math.max(16, Math.floor(img.naturalWidth  * sampleScale));
-    const h0 = Math.max(16, Math.floor(img.naturalHeight * sampleScale));
+    const ss = SHAPE_CFG.sampleScale;
+    const W = Math.max(24, Math.floor(iw * ss));
+    const H = Math.max(24, Math.floor(ih * ss));
 
     const cvs = document.createElement("canvas");
-    cvs.width = w0; cvs.height = h0;
-    const ctx = cvs.getContext("2d", { willReadFrequently:true });
-    ctx.clearRect(0,0,w0,h0);
-    ctx.drawImage(img, 0,0,w0,h0);
+    cvs.width = W; cvs.height = H;
+    const ctx = cvs.getContext("2d", { willReadFrequently: true });
+    ctx.clearRect(0, 0, W, H);
+    ctx.drawImage(img, 0, 0, W, H);
 
-    const data = ctx.getImageData(0,0,w0,h0).data;
-    const mask = new Uint8Array(w0*h0);
-    let solid=0;
+    const data = ctx.getImageData(0, 0, W, H).data;
+    const mask = new Uint8Array(W * H);
 
-    for(let y=0;y<h0;y++){
-      for(let x=0;x<w0;x++){
-        const i = (y*w0 + x)*4;
-        const a = data[i+3];
-        if (a > threshold){
-          mask[y*w0 + x] = 1;
+    let solid = 0;
+    let minX = W, minY = H, maxX = -1, maxY = -1;
+
+    const thr = SHAPE_CFG.threshold;
+
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = (y * W + x) * 4;
+        const a = data[i + 3];
+        if (a > thr) {
+          mask[y * W + x] = 1;
           solid++;
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
         }
       }
     }
     if (solid < 30) return null;
 
-    const boundary = new Uint8Array(w0*h0);
-    let sx=-1, sy=-1;
-    for(let y=1;y<h0-1;y++){
-      for(let x=1;x<w0-1;x++){
-        const idx = y*w0+x;
-        if(!mask[idx]) continue;
-        if(!mask[idx-1] || !mask[idx+1] || !mask[idx-w0] || !mask[idx+w0]){
-          boundary[idx]=1;
-          if(sy===-1 || y<sy || (y===sy && x<sx)){ sx=x; sy=y; }
+    // 境界抽出（4近傍）
+    const boundary = new Uint8Array(W * H);
+    let sx = -1, sy = -1;
+    for (let y = 1; y < H - 1; y++) {
+      for (let x = 1; x < W - 1; x++) {
+        const idx = y * W + x;
+        if (!mask[idx]) continue;
+        if (!mask[idx - 1] || !mask[idx + 1] || !mask[idx - W] || !mask[idx + W]) {
+          boundary[idx] = 1;
+          // startは「最上・最左」優先
+          if (sy === -1 || y < sy || (y === sy && x < sx)) { sx = x; sy = y; }
         }
       }
     }
-    if (sx===-1) return null;
+    if (sx === -1) return null;
 
-    const contour = traceMoore(boundary, w0, h0, sx, sy);
-    if(!contour || contour.length < 20) return null;
+    const contour = traceMoore(boundary, W, H, sx, sy);
+    if (!contour || contour.length < 20) return null;
 
-    const inv = 1/sampleScale;
-    const cx = w0/2, cy = h0/2;
-    let pts = contour.map(p => ({ x:(p.x - cx)*inv, y:(p.y - cy)*inv }));
+    // ★中心を「実体のBBox中心」に合わせる（透明余白があっても一致）
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
 
-    pts = rdpSimplify(pts, simplifyEps*inv);
-    pts = capVertices(pts, maxVertices);
+    const inv = 1 / ss;
+    let pts = contour.map(p => ({
+      x: (p.x - cx) * inv,
+      y: (p.y - cy) * inv
+    }));
+
+    pts = rdpSimplify(pts, SHAPE_CFG.simplifyEps * inv);
+    pts = capVertices(pts, SHAPE_CFG.maxVertices);
 
     if (pts.length < 8) return null;
+    if (polygonArea(pts) > 0) pts.reverse(); // clockwise揃え
 
-    // Matter.jsはだいたいCWの方が安定しがちなので揃える
-    if (polygonArea(pts) > 0) pts.reverse();
-
-    shapeCache.set(imgPath, pts);
-    return pts;
+    const packed = { pts, iw, ih };
+    shapeCache.set(imgPath, packed);
+    return packed;
   }
 
-  window.onload = function() { init(); };
+  // ===== ゲーム本体 =====
+  let spawning = false;
+
+  window.onload = function () { init(); };
 
   function init() {
     engine = Engine.create();
@@ -277,6 +328,7 @@
     });
 
     createGround();
+
     Render.run(render);
     runner = Runner.create();
     Runner.run(runner, engine);
@@ -284,21 +336,21 @@
     Events.on(engine, 'beforeUpdate', updateLoop);
 
     window.addEventListener('resize', () => {
-      w = window.innerWidth; h = window.innerHeight;
+      w = window.innerWidth;
+      h = window.innerHeight;
       render.canvas.width = w;
       render.canvas.height = h;
       createGround();
     });
   }
 
-  // 土台
   function createGround() {
-    if(ground) Composite.remove(engine.world, ground);
+    if (ground) Composite.remove(engine.world, ground);
 
     const groundY = h - 180;
     const groundWidth = w * 0.3;
 
-    ground = Bodies.rectangle(w/2, groundY, groundWidth, 20, {
+    ground = Bodies.rectangle(w / 2, groundY, groundWidth, 20, {
       isStatic: true,
       label: 'Ground',
       render: { fillStyle: '#8b4513' },
@@ -312,8 +364,8 @@
     document.getElementById('game-over-screen').classList.add('hidden');
     document.getElementById('controls').classList.remove('hidden');
 
+    // ワールドをクリア（ただしエンジン/レンダラは使い回す）
     Composite.clear(engine.world, false);
-    Engine.clear(engine);
 
     w = window.innerWidth; h = window.innerHeight;
     render.canvas.width = w; render.canvas.height = h;
@@ -325,72 +377,75 @@
     document.getElementById('score-val').innerText = score;
     gameActive = true;
 
-    spawnPintxo(); // asyncだけど呼びっぱなしでOK（内部でawaitしてから出現）
+    spawnPintxo();
   }
 
-  // ★ここが変更点：透過PNGのアルファから自動で当たり判定ポリゴンを作る
   async function spawnPintxo() {
-    if (!gameActive) return;
+    if (!gameActive || spawning) return;
+    spawning = true;
 
-    const imgIndex = Math.floor(Math.random() * IMAGES.length);
-    const imgPath = IMAGES[imgIndex];
+    try {
+      const imgIndex = Math.floor(Math.random() * IMAGES.length);
+      const imgPath = IMAGES[imgIndex];
 
-    const spawnY = render.bounds.min.y + 100;
-    const spawnX = w / 2;
+      const spawnY = render.bounds.min.y + 100;
+      const spawnX = w / 2;
 
-    // 透過縁が多い/半透明が多いなら threshold を上げる（例: 25〜40）
-    const verts = await verticesFromAlpha(imgPath, {
-      threshold: 18,
-      sampleScale: 0.25,
-      simplifyEps: 2.8,
-      maxVertices: 90
-    });
+      const info = await extractShapeFromAlpha(imgPath);
 
-    // 抽出失敗時の保険（六角形）
-    const fallback = [
-      {x:-40,y:-40},{x:40,y:-40},{x:55,y:0},{x:40,y:40},{x:-40,y:40},{x:-55,y:0}
-    ];
+      // 抽出失敗時の保険（六角形）
+      const fallback = {
+        pts: [
+          {x:-40,y:-40},{x:40,y:-40},{x:55,y:0},{x:40,y:40},{x:-40,y:40},{x:-55,y:0}
+        ],
+        iw: 100,
+        ih: 100
+      };
 
-    const shape = verts ?? fallback;
+      const { pts, iw, ih } = info ?? fallback;
 
-    currentPintxo = Bodies.fromVertices(spawnX, spawnY, [shape], {
-      label: 'Pintxo',
-      restitution: 0.1,
-      friction: 0.8,
-      render: {
-        sprite: {
-          texture: imgPath,
-          xScale: 0.8,
-          yScale: 0.8
+      // ★スプライトと物理ボディのスケールを一致させる（ここがズレの根治）
+      const spriteScale = TARGET_SIZE / Math.max(iw, ih);
+
+      currentPintxo = Bodies.fromVertices(spawnX, spawnY, [pts], {
+        label: 'Pintxo',
+        restitution: 0.1,
+        friction: 0.8,
+        render: {
+          sprite: {
+            texture: imgPath,
+            xScale: spriteScale,
+            yScale: spriteScale
+          }
         }
+      }, true);
+
+      if (currentPintxo) {
+        // 物理ボディも同じ倍率で縮小（さらに少しだけ肉抜き）
+        Body.scale(currentPintxo, spriteScale * HIT_INSET, spriteScale * HIT_INSET);
+
+        Body.setStatic(currentPintxo, true);
+        currentPintxo.isDropped = false;
+        Composite.add(engine.world, currentPintxo);
+        isDropping = false;
       }
-    }, true);
-
-    if(currentPintxo) {
-      // 「浮いて見える」なら当たり判定だけ少し小さくする（透明フチが多い画像向け）
-      // 値を下げるほど“肉抜き”が強くなる
-      Body.scale(currentPintxo, 0.95, 0.95);
-
-      Body.setStatic(currentPintxo, true);
-      currentPintxo.isDropped = false;
-      Composite.add(engine.world, currentPintxo);
-      isDropping = false;
+    } finally {
+      spawning = false;
     }
   }
 
   function updateLoop() {
     if (!gameActive) return;
 
-    let allBodies = Composite.allBodies(engine.world);
+    const allBodies = Composite.allBodies(engine.world);
+
+    // カメラ追従
     let highestY = ground.position.y;
     let hasStack = false;
 
-    for(let b of allBodies) {
-      if(b.label === 'Pintxo' && b !== currentPintxo) {
-        if(b.position.y < highestY) {
-          highestY = b.position.y;
-          hasStack = true;
-        }
+    for (let b of allBodies) {
+      if (b.label === 'Pintxo' && b !== currentPintxo) {
+        if (b.position.y < highestY) { highestY = b.position.y; hasStack = true; }
       }
     }
 
@@ -406,32 +461,33 @@
       Render.lookAt(render, { min: { x: 0, y: 0 }, max: { x: w, y: h } });
     }
 
-    // 「下に消えたらミス」でOK：画面外（下）に落ちたらゲームオーバー
+    // 「下に消えたらミス」でOK
     const deadLine = render.bounds.max.y + 200;
-    allBodies.forEach(b => {
+    for (let b of allBodies) {
       if (b.label === 'Pintxo' && b !== currentPintxo) {
-        if (b.position.y > deadLine) gameOver();
+        if (b.position.y > deadLine) { gameOver(); break; }
       }
-    });
+    }
   }
 
   function move(dir) {
-    if(currentPintxo && !isDropping) Body.translate(currentPintxo, {x: dir*6, y:0});
+    if (currentPintxo && !isDropping) Body.translate(currentPintxo, { x: dir * 6, y: 0 });
   }
   function rotate() {
-    if(currentPintxo && !isDropping) Body.rotate(currentPintxo, Math.PI/4);
+    if (currentPintxo && !isDropping) Body.rotate(currentPintxo, Math.PI / 4);
   }
   function drop() {
-    if(currentPintxo && !isDropping) {
+    if (currentPintxo && !isDropping) {
       isDropping = true;
       Body.setStatic(currentPintxo, false);
       currentPintxo.isDropped = true;
+
       setTimeout(() => {
-        if(gameActive) {
+        if (gameActive) {
           calcScore(currentPintxo);
           spawnPintxo();
         }
-      }, 800); // 2秒は長いので短縮（好みで戻してOK）
+      }, 800);
     }
   }
 
@@ -446,6 +502,7 @@
   function gameOver() {
     if (!gameActive) return;
     gameActive = false;
+
     document.getElementById('final-score').innerText = score;
     document.getElementById('controls').classList.add('hidden');
     document.getElementById('game-over-screen').classList.remove('hidden');
@@ -453,12 +510,12 @@
     document.getElementById('ranking-area').classList.add('hidden');
   }
 
-  window.saveScore = function() {
+  window.saveScore = function () {
     const name = document.getElementById('player-name').value || "名無し";
     const data = JSON.parse(localStorage.getItem('pintxosRank')) || [];
     data.push({ name: name, score: score });
-    data.sort((a,b)=>b.score-a.score);
-    localStorage.setItem('pintxosRank', JSON.stringify(data.slice(0,5)));
+    data.sort((a, b) => b.score - a.score);
+    localStorage.setItem('pintxosRank', JSON.stringify(data.slice(0, 5)));
     showRank();
   };
 
@@ -466,15 +523,16 @@
     const data = JSON.parse(localStorage.getItem('pintxosRank')) || [];
     const list = document.getElementById('ranking-list');
     list.innerHTML = "";
-    data.forEach((d,i) => {
-      list.innerHTML += `<li><span>${i+1}.${d.name}</span><span>${d.score}</span></li>`;
+    data.forEach((d, i) => {
+      list.innerHTML += `<li><span>${i + 1}.${d.name}</span><span>${d.score}</span></li>`;
     });
     document.getElementById('input-area').classList.add('hidden');
     document.getElementById('ranking-area').classList.remove('hidden');
   }
 
-  window.resetGame = function() { startGame(); };
+  window.resetGame = function () { startGame(); };
 
+  // 操作ボタン（長押し対応）
   const btnL = document.getElementById('btn-left');
   const btnR = document.getElementById('btn-right');
   const btnRot = document.getElementById('btn-rotate');
@@ -482,9 +540,9 @@
 
   const hold = (btn, action) => {
     let t;
-    const s = (e)=>{ e.preventDefault(); action(); t=setInterval(action,50); };
-    const e2 = (e)=>{ e.preventDefault(); clearInterval(t); };
-    btn.addEventListener('touchstart', s, {passive:false});
+    const s = (e) => { e.preventDefault(); action(); t = setInterval(action, 50); };
+    const e2 = (e) => { e.preventDefault(); clearInterval(t); };
+    btn.addEventListener('touchstart', s, { passive: false });
     btn.addEventListener('touchend', e2);
     btn.addEventListener('touchcancel', e2);
     btn.addEventListener('mousedown', s);
@@ -492,14 +550,13 @@
     btn.addEventListener('mouseleave', e2);
   };
 
-  hold(btnL, ()=>move(-1));
-  hold(btnR, ()=>move(1));
+  hold(btnL, () => move(-1));
+  hold(btnR, () => move(1));
 
   btnRot.addEventListener('click', rotate);
-  btnRot.addEventListener('touchstart', (e)=>{e.preventDefault(); rotate()},{passive:false});
+  btnRot.addEventListener('touchstart', (e) => { e.preventDefault(); rotate(); }, { passive: false });
   btnDrop.addEventListener('click', drop);
-  btnDrop.addEventListener('touchstart', (e)=>{e.preventDefault(); drop()},{passive:false});
+  btnDrop.addEventListener('touchstart', (e) => { e.preventDefault(); drop(); }, { passive: false });
 </script>
-
 </body>
 </html>
