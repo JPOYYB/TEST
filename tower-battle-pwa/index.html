@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover" />
+  <title>タワーバトル</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#0b1020" />
+  <link rel="apple-touch-icon" href="assets/ui/icon-192.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+</head>
+<body>
+  <canvas id="game" aria-label="タワーバトル"></canvas>
+
+  <!-- UI Overlays -->
+  <div id="overlay" class="overlay">
+    <section id="screen-title" class="screen active" role="dialog" aria-modal="true">
+      <div class="title-bg" id="title-bg"></div>
+      <div class="card title-card">
+        <img id="title-logo" class="title-logo" alt="タワーバトル" />
+        <div class="btn-col">
+          <button id="btn-start" class="btn primary">START</button>
+          <button id="btn-howto" class="btn">あそびかた</button>
+          <button id="btn-ranking" class="btn">ランキング</button>
+          <button id="btn-sound" class="btn">サウンド：ON</button>
+        </div>
+        <p class="fineprint">※スマホ推奨 / 画面タップで落下（タイトル画像差し替え可）</p>
+      </div>
+    </section>
+
+    <section id="screen-howto" class="screen" role="dialog" aria-modal="true">
+      <div class="card">
+        <h2>あそびかた</h2>
+        <ol class="howto">
+          <li>動物が上から移動します。</li>
+          <li>画面をタップすると落下して積み上がります。</li>
+          <li>落ちたら終了。高く積んでスコアを伸ばそう。</li>
+        </ol>
+        <div class="btn-row">
+          <button class="btn" data-nav="title">戻る</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="screen-result" class="screen" role="dialog" aria-modal="true">
+      <div class="card">
+        <h2>結果</h2>
+        <p class="big" id="result-score">Score: 0</p>
+        <p id="result-best">Best: 0</p>
+        <div class="btn-col">
+          <button id="btn-submit" class="btn primary">ランキング登録</button>
+          <button class="btn" data-nav="ranking">ランキングを見る</button>
+          <button class="btn" data-nav="title">タイトルへ</button>
+          <button class="btn" id="btn-retry">もう一回</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="screen-ranking" class="screen" role="dialog" aria-modal="true">
+      <div class="card">
+        <h2>ポイントランキング</h2>
+        <div id="ranking-list" class="ranking-list"></div>
+        <div class="btn-row">
+          <button class="btn" data-nav="title">戻る</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="screen-name" class="screen" role="dialog" aria-modal="true">
+      <div class="card">
+        <h2>名前を入力</h2>
+        <input id="name-input" class="input" maxlength="12" placeholder="12文字まで" />
+        <p class="fineprint">不適切ワードは自動的に伏字にします（気持ちは分かる）。</p>
+        <div class="btn-row">
+          <button id="btn-name-cancel" class="btn">キャンセル</button>
+          <button id="btn-name-ok" class="btn primary">登録</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- HUD -->
+  <div id="hud" class="hud hidden">
+    <div class="hud-left">
+      <span id="hud-score">0</span>
+      <small>pts</small>
+    </div>
+    <div class="hud-right">
+      <span id="hud-time">60</span>
+      <small>s</small>
+    </div>
+  </div>
+
+  <!-- Libs: Matter.js + poly-decomp for concave polygons -->
+  <script src="https://cdn.jsdelivr.net/npm/poly-decomp@0.3.0/build/decomp.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/matter-js@0.20.0/build/matter.min.js"></script>
+
+  <script type="module" src="js/main.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').catch(()=>{});
+    });
+  }
+</script>
+</body>
+</html>
