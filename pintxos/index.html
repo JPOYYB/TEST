@@ -2,86 +2,43 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Pintxos Tower</title>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/poly-decomp@0.3.0/build/decomp.min.js"></script>
-  <script src="shape-extract.js?v=9"></script>
 
   <style>
     body { margin:0; padding:0; overflow:hidden; background:#f2f2f2; font-family: system-ui, -apple-system, sans-serif; touch-action:none; }
-    canvas { display:block; position:fixed; top:0; left:0; z-index:0; }
-
-    #ui-layer { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:10; }
-    #score-board { position:absolute; top:18px; left:18px; font-size:40px; font-weight:900; color:#333; text-shadow:2px 2px 0 #fff; letter-spacing:1px; }
-    #score-board span { font-size:40px; }
-
-    #controls {
-      position:absolute; bottom:30px; left:0; width:100%;
-      display:flex; justify-content:center; align-items:center; gap:22px;
-      pointer-events:auto;
-    }
-    .control-btn {
-      width:74px; height:74px;
-      background: rgba(255,255,255,0.92);
-      border: 2px solid #999;
-      border-radius: 50%;
-      font-size: 28px;
-      display:flex; justify-content:center; align-items:center;
-      box-shadow: 0 6px 10px rgba(0,0,0,0.18);
-      user-select:none; -webkit-user-select:none;
-    }
-    .control-btn:active { transform: translateY(2px); background:#ddd; }
-
-    #btn-drop{
-      width:104px; height:104px;
-      background:#ff4757; color:#fff; border:none;
-      font-size:34px; box-shadow:0 10px 14px rgba(0,0,0,0.22);
-    }
-
-    .overlay {
-      position:absolute; inset:0;
-      background: rgba(255,255,255,0.95);
-      display:flex; flex-direction:column; justify-content:center; align-items:center;
-      z-index:20; pointer-events:auto;
-    }
+    canvas { display:block; position:fixed; top:0; left:0; }
+    #ui-layer { position:absolute; inset:0; pointer-events:none; z-index:10; }
+    #score-board { position:absolute; top:20px; left:20px; font-size:44px; font-weight:800; color:#333; text-shadow: 2px 2px 0 #fff; }
+    #controls { position:absolute; bottom:30px; left:0; width:100%; height:110px; display:flex; justify-content:center; align-items:center; gap:22px; pointer-events:auto; }
+    .control-btn { width:72px; height:72px; background:rgba(255,255,255,0.92); border:2px solid #888; border-radius:50%; font-size:28px; cursor:pointer;
+      display:flex; justify-content:center; align-items:center; box-shadow:0 6px 10px rgba(0,0,0,0.18); user-select:none; -webkit-user-select:none; }
+    .control-btn:active { transform: translateY(2px); filter:brightness(0.95); }
+    #btn-drop { width:92px; height:92px; background:#ff4757; color:#fff; border:none; font-size:34px; }
+    .overlay { position:absolute; inset:0; background:rgba(255,255,255,0.95); display:flex; flex-direction:column; justify-content:center; align-items:center; z-index:20; pointer-events:auto; }
     .hidden { display:none !important; }
-
-    button.primary-btn {
-      padding: 14px 42px; font-size: 18px;
-      background:#2ecc71; color:#fff; border:none; border-radius:30px;
-      margin-top:14px; cursor:pointer;
-    }
-
-    #game-over-screen input {
-      padding:10px; font-size:16px; text-align:center;
-      border-radius:10px; border:1px solid #bbb; width:220px;
-    }
+    button.primary-btn { padding:14px 40px; font-size:18px; background:#2ecc71; color:#fff; border:none; border-radius:30px; margin-top:15px; cursor:pointer; }
     #ranking-list { padding:0; list-style:none; margin-top:10px; }
     #ranking-list li { margin:6px 0; border-bottom:1px solid #ddd; padding:6px; width:240px; display:flex; justify-content:space-between; }
 
-    /* Debug UI */
-    #dbgBtn{
-      position:absolute; top:16px; right:16px; z-index:30;
-      pointer-events:auto;
-      background:#222; color:#fff; border:none; border-radius:22px;
-      padding:10px 14px; display:flex; gap:10px; align-items:center;
-      box-shadow: 0 8px 14px rgba(0,0,0,0.25);
-      opacity:0.92;
+    /* debug */
+    #debugBtn {
+      position:absolute; top:18px; right:18px; z-index:30; pointer-events:auto;
+      background:#222; color:#fff; border:none; padding:10px 14px; border-radius:999px;
+      box-shadow:0 10px 18px rgba(0,0,0,0.22); cursor:pointer; font-weight:700;
     }
-    #dbgPanel{
-      position:absolute; top:70px; right:16px; z-index:30;
-      pointer-events:none;
-      background:rgba(20,20,20,0.86); color:#fff;
-      padding:14px 16px; border-radius:16px;
-      width:300px; font-size:14px; line-height:1.35;
-      white-space:pre-wrap;
+    #debugLayer {
+      position:fixed; top:0; left:0; z-index:9; pointer-events:none; display:none;
     }
   </style>
 </head>
-
 <body>
+
+  <canvas id="debugLayer"></canvas>
+
   <div id="ui-layer">
     <div id="score-board">SCORE: <span id="score-val">0</span></div>
 
@@ -93,483 +50,363 @@
     </div>
   </div>
 
-  <button id="dbgBtn">🐞 <b>DEBUG</b></button>
-  <div id="dbgPanel" class="hidden"></div>
+  <button id="debugBtn">🐞 DEBUG</button>
 
   <div id="title-screen" class="overlay">
-    <h1 style="margin:0 0 10px 0;">Pintxos Tower</h1>
-    <p style="margin:0 0 10px 0;">落として積み上げろ！</p>
-    <button class="primary-btn" id="btn-start">START</button>
+    <h1 style="margin:0 0 6px 0;">Pintxos Tower</h1>
+    <p style="margin:0 0 12px 0;">積み上げろ。落としたら負け。</p>
+    <button class="primary-btn" id="startBtn">START</button>
   </div>
 
   <div id="game-over-screen" class="overlay hidden">
-    <h1 style="margin:0 0 10px 0;">GAME OVER</h1>
+    <h1>GAME OVER</h1>
     <p>Score: <span id="final-score">0</span></p>
-
     <div id="input-area">
-      <input type="text" id="player-name" placeholder="名前を入力" maxlength="8">
-      <br><br>
-      <button class="primary-btn" id="btn-save">ランキング登録</button>
+      <input type="text" id="player-name" placeholder="名前を入力" maxlength="8" style="padding:10px; font-size:16px; text-align:center;">
       <br>
-      <button style="margin-top:16px; background:none; border:none; text-decoration:underline; color:#666;" id="btn-retry">リトライ</button>
+      <button class="primary-btn" id="saveBtn">ランキング登録</button>
+      <br>
+      <button style="margin-top:15px; background:none; border:none; text-decoration:underline; color:#666;" id="retryBtn">リトライ</button>
     </div>
-
     <div id="ranking-area" class="hidden">
-      <h3 style="margin:0 0 8px 0;">ランキング</h3>
+      <h3>ランキング</h3>
       <ul id="ranking-list"></ul>
-      <button class="primary-btn" id="btn-again">もう一度</button>
+      <button class="primary-btn" id="againBtn">もう一度</button>
     </div>
   </div>
 
-<script>
-(() => {
-  const { Engine, Render, Runner, Bodies, Composite, Events, Body } = Matter;
+  <!-- shape-extract.js を同フォルダに置く -->
+  <script src="shape-extract.js"></script>
 
-  // ===== 設定（ここだけ触れば調整できる） =====
-  const IMG_COUNT = 11;
-  const IMG_DIR = "img";
-  const MASK_DIR = "mask";
+  <script>
+    const { Engine, Render, Runner, Bodies, Composite, Events, Body } = Matter;
 
-  const PIECE_TARGET_SIZE = 150;    // 見た目のサイズ
-  const HIT_INSET = 1.02;           // 1.0より大きい＝隙間を詰める（詰めすぎ注意）
-  const MOVE_STEP = 7;
-  const ROT_STEP = Math.PI / 10;
+    let engine, render, runner;
+    let ground;
+    let current = null;
+    let isDropping = false;
+    let gameActive = false;
+    let score = 0;
 
-  // 「下に消えたらミス」判定： ground よりこれ以上下に落ちたら終了
-  const KILL_EXTRA = 1100;
+    let W = window.innerWidth;
+    let H = window.innerHeight;
 
-  // 形抽出の設定（マスク品質で変える）
-  const SHAPE_CFG = {
-    alphaThreshold: 1,
-    nPoints: 140,
-    padPx: 2,
-    analysisMax: 560,
-    minContour: 24,
-    erodePx: 0
-  };
+    const IMG_COUNT = 11;
+    const TEX = i => `img/${i}.png`;
+    const MASK = i => `mask/${i}.png`;
 
-  // ===== UI =====
-  const $ = (id) => document.getElementById(id);
-  const scoreEl = $("score-val");
-  const dbgBtn = $("dbgBtn");
-  const dbgPanel = $("dbgPanel");
+    let assets = [];
+    let debug = false;
 
-  const controls = $("controls");
-  const btnL = $("btn-left");
-  const btnR = $("btn-right");
-  const btnRot = $("btn-rotate");
-  const btnDrop = $("btn-drop");
+    const debugCanvas = document.getElementById('debugLayer');
+    const debugCtx = debugCanvas.getContext('2d');
 
-  const titleScreen = $("title-screen");
-  const gameOverScreen = $("game-over-screen");
-  const finalScoreEl = $("final-score");
-  const inputArea = $("input-area");
-  const rankingArea = $("ranking-area");
-  const rankingList = $("ranking-list");
+    function resizeAll() {
+      W = window.innerWidth; H = window.innerHeight;
+      render.canvas.width = W; render.canvas.height = H;
+      debugCanvas.width = W; debugCanvas.height = H;
+      createGround();
+    }
 
-  // ===== 状態 =====
-  let engine, render, runner;
-  let ground;
-  let w = innerWidth, h = innerHeight;
+    function worldToScreen(x, y) {
+      const b = render.bounds;
+      const sx = (x - b.min.x) * (W / (b.max.x - b.min.x));
+      const sy = (y - b.min.y) * (H / (b.max.y - b.min.y));
+      return { x: sx, y: sy };
+    }
 
-  let gameActive = false;
-  let score = 0;
+    function drawDebug() {
+      if (!debug) return;
+      debugCtx.clearRect(0, 0, W, H);
 
-  let current = null;        // 操作中（static）
-  let isDropping = false;    // drop直後の待機
-  let spawning = false;
+      const bodies = Composite.allBodies(engine.world);
+      debugCtx.lineWidth = 2;
+      debugCtx.strokeStyle = "#00ff6a";
 
-  let debugOn = false;
-  let lastDbgText = "";
+      for (const b of bodies) {
+        if (b.label !== "Pintxo") continue;
+        const vs = b.vertices;
+        if (!vs || vs.length < 3) continue;
 
-  const IMAGES = Array.from({length: IMG_COUNT}, (_,i)=> `${IMG_DIR}/${i+1}.png`);
-
-  // ===== 初期化 =====
-  function init() {
-    render = Render.create({
-      element: document.body,
-      engine: Engine.create(), // ダミー
-      options: {
-        width: w,
-        height: h,
-        background: "#f2f2f2",
-        wireframes: false,
-        pixelRatio: 1
+        debugCtx.beginPath();
+        const p0 = worldToScreen(vs[0].x, vs[0].y);
+        debugCtx.moveTo(p0.x, p0.y);
+        for (let i = 1; i < vs.length; i++) {
+          const p = worldToScreen(vs[i].x, vs[i].y);
+          debugCtx.lineTo(p.x, p.y);
+        }
+        debugCtx.closePath();
+        debugCtx.stroke();
       }
-    });
-    Render.run(render);
+    }
 
-    window.addEventListener("resize", onResize, { passive: true });
+    function init() {
+      engine = Engine.create({ enableSleeping: true });
+      engine.positionIterations = 12;
+      engine.velocityIterations = 8;
 
-    // debug button
-    dbgBtn.addEventListener("click", () => {
-      debugOn = !debugOn;
-      dbgPanel.classList.toggle("hidden", !debugOn);
-    });
-
-    // start
-    $("btn-start").addEventListener("click", startGame);
-
-    // ranking
-    $("btn-save").addEventListener("click", saveScore);
-    $("btn-retry").addEventListener("click", startGame);
-    $("btn-again").addEventListener("click", startGame);
-
-    // controls
-    const hold = (btn, action) => {
-      let t = null;
-      const start = (e) => { e.preventDefault(); action(); t = setInterval(action, 50); };
-      const end = (e) => { e.preventDefault(); if(t) clearInterval(t); t = null; };
-      btn.addEventListener("touchstart", start, { passive: false });
-      btn.addEventListener("touchend", end);
-      btn.addEventListener("touchcancel", end);
-      btn.addEventListener("mousedown", start);
-      btn.addEventListener("mouseup", end);
-      btn.addEventListener("mouseleave", end);
-    };
-    hold(btnL, ()=>move(-1));
-    hold(btnR, ()=>move(1));
-    btnRot.addEventListener("click", rotate);
-    btnRot.addEventListener("touchstart", (e)=>{ e.preventDefault(); rotate(); }, { passive:false });
-    btnDrop.addEventListener("click", drop);
-    btnDrop.addEventListener("touchstart", (e)=>{ e.preventDefault(); drop(); }, { passive:false });
-
-    // outline drawing
-    Matter.Events.on(render, "afterRender", drawDebugOverlay);
-  }
-
-  function onResize() {
-    w = innerWidth; h = innerHeight;
-    render.canvas.width = w;
-    render.canvas.height = h;
-    render.options.width = w;
-    render.options.height = h;
-  }
-
-  function resetPhysics() {
-    if (runner) Runner.stop(runner);
-
-    engine = Engine.create();
-    engine.enableSleeping = true;
-    engine.gravity.y = 1;
-
-    render.engine = engine;
-
-    runner = Runner.create();
-    Runner.run(runner, engine);
-
-    Events.on(engine, "beforeUpdate", updateLoop);
-    createGround();
-    Render.lookAt(render, { min:{x:0,y:0}, max:{x:w,y:h} });
-  }
-
-  function createGround() {
-    const groundY = h - 180;
-    const groundWidth = w * 0.38;
-    ground = Bodies.rectangle(w/2, groundY, groundWidth, 20, {
-      isStatic: true,
-      label: "Ground",
-      render: { fillStyle: "#8b4513" },
-      friction: 1.0
-    });
-    Composite.add(engine.world, ground);
-  }
-
-  // ===== ゲーム制御 =====
-  async function startGame() {
-    titleScreen.classList.add("hidden");
-    gameOverScreen.classList.add("hidden");
-    controls.classList.remove("hidden");
-
-    score = 0;
-    scoreEl.textContent = String(score);
-
-    gameActive = true;
-    current = null;
-    isDropping = false;
-    spawning = false;
-
-    resetPhysics();
-
-    await spawnPiece();
-  }
-
-  function getIdFromPath(texPath) {
-    const m = texPath.match(/(\d+)\.png$/);
-    return m ? m[1] : "1";
-  }
-
-  async function spawnPiece() {
-    if (!gameActive || spawning) return;
-    spawning = true;
-
-    const tex = IMAGES[Math.floor(Math.random() * IMAGES.length)];
-    const id = getIdFromPath(tex);
-    const mask = `${MASK_DIR}/${id}.png`;
-
-    const spawnY = render.bounds.min.y + 120;
-    const spawnX = w / 2;
-
-    try {
-      const body = await ShapeExtract.makeBody(tex, spawnX, spawnY, {
-        maskPath: mask,
-        targetSize: PIECE_TARGET_SIZE,
-        hitInset: HIT_INSET,
-        shapeCfg: SHAPE_CFG,
-        bodyOpts: { label:"Pintxo", restitution:0.02, friction:0.95 }
+      render = Render.create({
+        element: document.body,
+        engine,
+        options: {
+          width: W,
+          height: H,
+          background: "#f2f2f2",
+          wireframes: false,
+          pixelRatio: 1
+        }
       });
 
-      Body.setStatic(body, true);
-      body.isDropped = false;
+      Render.run(render);
+      runner = Runner.create();
+      Runner.run(runner, engine);
 
-      Composite.add(engine.world, body);
-      current = body;
+      createGround();
+
+      Events.on(engine, "beforeUpdate", updateLoop);
+      Events.on(render, "afterRender", () => drawDebug());
+
+      window.addEventListener("resize", resizeAll);
+    }
+
+    function createGround() {
+      if (ground) Composite.remove(engine.world, ground);
+
+      const y = H - 180;
+      const w = W * 0.55;      // ちょい広め（遊びやすい）
+      const h = 22;
+
+      ground = Bodies.rectangle(W / 2, y, w, h, {
+        isStatic: true,
+        label: "Ground",
+        friction: 1.0,
+        render: { fillStyle: "#8b4513" }
+      });
+
+      Composite.add(engine.world, ground);
+    }
+
+    async function loadAssets() {
+      assets = [];
+      for (let i = 1; i <= IMG_COUNT; i++) {
+        const a = await ShapeExtract.prepare({
+          textureUrl: TEX(i),
+          maskUrl: MASK(i),
+          targetMax: 150,   // ←サイズ感はここ
+          alphaThr: 10,     // ←マスクが白/透明なら10でOK
+          hitInset: 0.97,   // ←隙間が気になるなら0.95〜0.98
+          maxVerts: 72
+        });
+        assets.push(a);
+      }
+    }
+
+    function resetWorldKeepRender() {
+      Composite.clear(engine.world, false);
+      Engine.clear(engine);
+
+      createGround();
+      Render.lookAt(render, { min: { x: 0, y: 0 }, max: { x: W, y: H } });
+
+      score = 0;
+      document.getElementById("score-val").innerText = score;
       isDropping = false;
-
-      updateDbgText(body);
-
-    } catch (e) {
-      console.error(e);
-    } finally {
-      spawning = false;
+      current = null;
     }
-  }
 
-  function move(dir) {
-    if (!current || isDropping) return;
-    const nx = current.position.x + dir * MOVE_STEP;
-    const margin = 40;
-    if (nx < margin || nx > w - margin) return;
-    Body.translate(current, { x: dir * MOVE_STEP, y: 0 });
-  }
+    function startGame() {
+      document.getElementById("title-screen").classList.add("hidden");
+      document.getElementById("game-over-screen").classList.add("hidden");
+      document.getElementById("controls").classList.remove("hidden");
 
-  function rotate() {
-    if (!current || isDropping) return;
-    Body.rotate(current, ROT_STEP);
-  }
+      gameActive = true;
+      resetWorldKeepRender();
+      spawn();
+    }
 
-  function drop() {
-    if (!current || isDropping) return;
-
-    isDropping = true;
-    const dropped = current;
-    current = null;
-
-    Body.setStatic(dropped, false);
-    dropped.isDropped = true;
-
-    waitUntilSettled(dropped).then(() => {
+    function spawn() {
       if (!gameActive) return;
-      addScoreFor(dropped);
-      spawnPiece();
-    });
-  }
+      const asset = assets[Math.floor(Math.random() * assets.length)];
 
-  function waitUntilSettled(body) {
-    return new Promise((resolve) => {
-      let stable = 0;
-      const need = 18;
+      const spawnX = W / 2;
+      const spawnY = render.bounds.min.y + 140;
 
-      const handler = () => {
-        if (!gameActive) { Events.off(engine, "afterUpdate", handler); resolve(); return; }
-        if (!body || body.isStatic) { Events.off(engine, "afterUpdate", handler); resolve(); return; }
+      current = ShapeExtract.createBody(asset, spawnX, spawnY, { isStatic: true });
+      current._asset = asset;
+      current._scored = false;
 
-        const speed = body.speed;
-        const ang = Math.abs(body.angularVelocity);
-
-        // 眠る or ほぼ停止が連続
-        if (body.isSleeping || (speed < 0.12 && ang < 0.12)) stable++;
-        else stable = 0;
-
-        if (stable >= need) {
-          Events.off(engine, "afterUpdate", handler);
-          resolve();
-        }
-      };
-
-      Events.on(engine, "afterUpdate", handler);
-    });
-  }
-
-  function addScoreFor(body) {
-    const diff = ground.position.y - body.position.y;
-    if (diff > 0) {
-      score += (Math.floor(diff / 10) + 10);
-      scoreEl.textContent = String(score);
+      Composite.add(engine.world, current);
+      isDropping = false;
     }
-  }
 
-  function gameOver() {
-    gameActive = false;
-    controls.classList.add("hidden");
-    finalScoreEl.textContent = String(score);
-    gameOverScreen.classList.remove("hidden");
-    inputArea.classList.remove("hidden");
-    rankingArea.classList.add("hidden");
-  }
+    function move(dir) {
+      if (!current || isDropping) return;
+      Body.translate(current, { x: dir * 8, y: 0 });
+    }
 
-  // ===== カメラ + ミス判定 =====
-  function updateLoop() {
-    if (!gameActive) return;
+    function rotate() {
+      if (!current || isDropping) return;
+      Body.rotate(current, Math.PI / 6);
+    }
 
-    const allBodies = Composite.allBodies(engine.world);
+    function drop() {
+      if (!current || isDropping) return;
+      isDropping = true;
+      Body.setStatic(current, false);
+      current._droppedAt = performance.now();
+    }
 
-    // camera follow: 一番高いピースを追う
-    let highestY = ground.position.y;
-    let hasStack = false;
+    function addScore(body) {
+      if (!body || body._scored) return;
+      body._scored = true;
 
-    for (const b of allBodies) {
-      if (b.label === "Pintxo" && b.isDropped) {
-        if (b.position.y < highestY) {
-          highestY = b.position.y;
+      const diff = ground.position.y - body.position.y;
+      if (diff > 0) {
+        score += (Math.floor(diff / 10) + 10);
+        document.getElementById("score-val").innerText = score;
+      }
+    }
+
+    function gameOver() {
+      gameActive = false;
+      document.getElementById("final-score").innerText = score;
+      document.getElementById("controls").classList.add("hidden");
+      document.getElementById("game-over-screen").classList.remove("hidden");
+      document.getElementById("input-area").classList.remove("hidden");
+      document.getElementById("ranking-area").classList.add("hidden");
+    }
+
+    function updateCamera() {
+      const bodies = Composite.allBodies(engine.world);
+      let highest = ground.position.y;
+      let hasStack = false;
+
+      for (const b of bodies) {
+        if (b.label === "Pintxo") {
+          highest = Math.min(highest, b.position.y);
           hasStack = true;
         }
       }
+
+      let targetTopY = 0;
+      if (hasStack) targetTopY = highest - (H * 0.55);
+      if (targetTopY > 0) targetTopY = 0;
+
+      const curTopY = render.bounds.min.y;
+      if (targetTopY < curTopY) {
+        const newY = curTopY + (targetTopY - curTopY) * 0.06;
+        Render.lookAt(render, { min: { x: 0, y: newY }, max: { x: W, y: newY + H } });
+      }
     }
 
-    let targetTopY = 0;
-    if (hasStack) targetTopY = highestY - (h * 0.55);
-    if (targetTopY > 0) targetTopY = 0;
+    function updateLoop() {
+      if (!gameActive) return;
 
-    const curTop = render.bounds.min.y;
-    if (targetTopY < curTop) {
-      const newY = curTop + (targetTopY - curTop) * 0.06;
-      Render.lookAt(render, { min:{x:0,y:newY}, max:{x:w,y:newY+h} });
-    } else if (curTop < 0 && !hasStack) {
-      Render.lookAt(render, { min:{x:0,y:0}, max:{x:w,y:h} });
-    }
+      updateCamera();
 
-    // 「下に消えたらミス」： ground より一定以上下に落ちたら終了
-    const killY = ground.position.y + KILL_EXTRA;
+      // 下に消えたらミス（＝落下負け）
+      const bodies = Composite.allBodies(engine.world);
+      const deadLine = ground.position.y + H * 0.9;
+      for (const b of bodies) {
+        if (b.label === "Pintxo") {
+          if (b.position.y > deadLine) {
+            gameOver();
+            return;
+          }
+        }
+      }
 
-    for (const b of allBodies) {
-      if (b.label === "Pintxo" && b.isDropped) {
-        if (b.position.y > killY) {
-          gameOver();
-          break;
+      // drop後：落ち着いたら採点して次を出す
+      if (isDropping && current) {
+        const now = performance.now();
+        const elapsed = now - (current._droppedAt || now);
+
+        const settled = current.isSleeping || (current.speed < 0.08 && Math.abs(current.angularSpeed) < 0.06);
+        const enoughTime = elapsed > 1200; // 最低ちょい待つ
+
+        if (settled && enoughTime) {
+          addScore(current);
+          spawn();
         }
       }
     }
 
-    // debug
-    if (debugOn) {
-      const last = (current || allBodies.find(b => b.label==="Pintxo" && b.isDropped));
-      if (last) updateDbgText(last);
+    // ===== Ranking =====
+    function saveScore() {
+      const name = document.getElementById("player-name").value || "名無し";
+      const data = JSON.parse(localStorage.getItem("pintxosRank") || "[]");
+      data.push({ name, score });
+      data.sort((a,b) => b.score - a.score);
+      localStorage.setItem("pintxosRank", JSON.stringify(data.slice(0, 5)));
+      showRank();
     }
-  }
+    function showRank() {
+      const data = JSON.parse(localStorage.getItem("pintxosRank") || "[]");
+      const list = document.getElementById("ranking-list");
+      list.innerHTML = "";
+      data.forEach((d,i) => {
+        const li = document.createElement("li");
+        li.innerHTML = `<span>${i+1}. ${d.name}</span><span>${d.score}</span>`;
+        list.appendChild(li);
+      });
+      document.getElementById("input-area").classList.add("hidden");
+      document.getElementById("ranking-area").classList.remove("hidden");
+    }
 
-  // ===== ランキング =====
-  function saveScore() {
-    const name = ($("player-name").value || "名無し").slice(0, 8);
-    const key = "pintxosRank";
-    const data = JSON.parse(localStorage.getItem(key) || "[]");
-    data.push({ name, score });
-    data.sort((a,b)=> b.score - a.score);
-    localStorage.setItem(key, JSON.stringify(data.slice(0, 5)));
-    showRank();
-  }
+    // ===== Controls (hold) =====
+    function hold(btn, action) {
+      let t = null;
+      const start = (e) => { e.preventDefault(); action(); t = setInterval(action, 55); };
+      const end = (e) => { e.preventDefault(); if (t) clearInterval(t); t = null; };
+      btn.addEventListener("touchstart", start, { passive:false });
+      btn.addEventListener("touchend", end);
+      btn.addEventListener("mousedown", start);
+      btn.addEventListener("mouseup", end);
+      btn.addEventListener("mouseleave", end);
+    }
 
-  function showRank() {
-    const data = JSON.parse(localStorage.getItem("pintxosRank") || "[]");
-    rankingList.innerHTML = "";
-    data.forEach((d, i) => {
-      const li = document.createElement("li");
-      li.innerHTML = `<span>${i+1}. ${d.name}</span><span>${d.score}</span>`;
-      rankingList.appendChild(li);
+    // ===== Boot =====
+    window.addEventListener("load", async () => {
+      init();
+
+      document.getElementById("startBtn").onclick = async () => {
+        // assetsが未ロードなら先に読む
+        if (assets.length === 0) {
+          document.getElementById("startBtn").disabled = true;
+          document.getElementById("startBtn").textContent = "LOADING...";
+          await loadAssets();
+          document.getElementById("startBtn").disabled = false;
+          document.getElementById("startBtn").textContent = "START";
+        }
+        startGame();
+      };
+
+      document.getElementById("saveBtn").onclick = saveScore;
+      document.getElementById("retryBtn").onclick = () => startGame();
+      document.getElementById("againBtn").onclick = () => startGame();
+
+      const btnL = document.getElementById("btn-left");
+      const btnR = document.getElementById("btn-right");
+      const btnRot = document.getElementById("btn-rotate");
+      const btnDrop = document.getElementById("btn-drop");
+
+      hold(btnL, () => move(-1));
+      hold(btnR, () => move( 1));
+
+      btnRot.addEventListener("click", rotate);
+      btnRot.addEventListener("touchstart", e => { e.preventDefault(); rotate(); }, { passive:false });
+
+      btnDrop.addEventListener("click", drop);
+      btnDrop.addEventListener("touchstart", e => { e.preventDefault(); drop(); }, { passive:false });
+
+      document.getElementById("debugBtn").onclick = () => {
+        debug = !debug;
+        debugCanvas.style.display = debug ? "block" : "none";
+      };
+
+      // debug canvasサイズ合わせ
+      debugCanvas.width = W; debugCanvas.height = H;
     });
-    inputArea.classList.add("hidden");
-    rankingArea.classList.remove("hidden");
-  }
-
-  // ===== DEBUG 表示（undefinedにしない） =====
-  function updateDbgText(body) {
-    const spr = body?.render?.sprite || {};
-    const dbg = body.__dbg || {};
-    const verts = body.vertices?.length ?? 0;
-    const parts = body.parts?.length ?? 0;
-
-    const txt =
-`Spawn
-tex: ${dbg.tex || spr.texture || "-"}
-mask: ${dbg.mask || "-"}
-ShapeExtract: ${window.ShapeExtract?.VERSION || "MISSING"}
-
-fallback: ${dbg.fallbackBool === true ? "true" : (dbg.fallbackBool === false ? "false" : "unknown")}
-reason: ${dbg.reason || "-"}
-verts: ${verts}  parts:${parts}
-solidRatio: ${(dbg.solidRatio ?? 0).toFixed ? (dbg.solidRatio).toFixed(3) : dbg.solidRatio}
-spriteScale: ${(dbg.spriteScale ?? 0).toFixed ? (dbg.spriteScale).toFixed(3) : dbg.spriteScale}  hitInset:${dbg.hitInset ?? "-"}
-offset: (${(spr.xOffset ?? 0.5).toFixed(3)}, ${(spr.yOffset ?? 0.5).toFixed(3)})
-forcedRect: ${dbg.forcedRect ? "true" : "false"}
-meta: ${dbg.meta ? JSON.stringify(dbg.meta) : "-"}`;
-
-    lastDbgText = txt;
-    dbgPanel.textContent = txt;
-  }
-
-  // ===== 当たり判定可視化（緑ライン/赤塗り） =====
-  function toCanvas(v) {
-    const bounds = render.bounds;
-    const cw = render.options.width;
-    const ch = render.options.height;
-    const sx = cw / (bounds.max.x - bounds.min.x);
-    const sy = ch / (bounds.max.y - bounds.min.y);
-    return {
-      x: (v.x - bounds.min.x) * sx,
-      y: (v.y - bounds.min.y) * sy
-    };
-  }
-
-  function drawPoly(ctx, body, fill, stroke) {
-    const verts = body.vertices;
-    if (!verts || verts.length < 3) return;
-
-    ctx.beginPath();
-    const p0 = toCanvas(verts[0]);
-    ctx.moveTo(p0.x, p0.y);
-    for (let i=1;i<verts.length;i++){
-      const p = toCanvas(verts[i]);
-      ctx.lineTo(p.x, p.y);
-    }
-    ctx.closePath();
-
-    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
-    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 3; ctx.stroke(); }
-  }
-
-  function drawDebugOverlay() {
-    if (!debugOn) return;
-    const ctx = render.context;
-    const bodies = Composite.allBodies(engine.world);
-    const target = current || bodies.find(b => b.label==="Pintxo" && b.isDropped);
-    if (!target) return;
-
-    // bbox
-    const b = target.bounds;
-    const a = toCanvas({x:b.min.x,y:b.min.y});
-    const c = toCanvas({x:b.max.x,y:b.max.y});
-    ctx.save();
-    ctx.strokeStyle = "rgba(0,0,0,0.25)";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(a.x, a.y, c.x - a.x, c.y - a.y);
-
-    // polygon
-    drawPoly(ctx, target, "rgba(255,0,0,0.35)", "rgba(0,255,0,0.9)");
-
-    // label
-    const isRect = !!target.__dbg?.forcedRect;
-    const label = isRect ? "RECT" : `POLY v=${target.vertices?.length ?? 0}`;
-    const pos = toCanvas(target.position);
-    ctx.fillStyle = "rgba(0,0,0,0.55)";
-    ctx.font = "16px system-ui";
-    ctx.fillText(label, pos.x - 30, pos.y);
-
-    ctx.restore();
-  }
-
-  // ===== 起動 =====
-  init();
-})();
-</script>
+  </script>
 </body>
 </html>
