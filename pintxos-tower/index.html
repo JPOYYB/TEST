@@ -13,14 +13,26 @@
             touch-action: none;
         }
 
-        /* ゲーム画面 */
+        /* ゲーム画面（一番奥） */
         canvas {
             display: block;
             width: 100%; height: 100%;
             z-index: 0;
+            position: fixed; top: 0; left: 0;
         }
 
-        /* UI全体 */
+        /* デバッグ情報（左上） */
+        #debug-info {
+            position: absolute; top: 50px; left: 10px;
+            font-size: 12px; color: #555;
+            z-index: 100;
+            background: rgba(255,255,255,0.8);
+            padding: 5px;
+            border-radius: 4px;
+            pointer-events: none;
+        }
+
+        /* UIレイヤー */
         #ui-layer {
             position: absolute; top: 0; left: 0;
             width: 100%; height: 100%;
@@ -29,23 +41,23 @@
         }
 
         #score-board {
-            position: absolute; top: 20px; left: 20px;
+            position: absolute; top: 10px; left: 10px;
             font-size: 24px; font-weight: bold; color: #333;
             text-shadow: 2px 2px 0px white;
         }
 
-        /* 操作ボタンエリア */
+        /* 操作ボタン */
         #controls {
             position: absolute; bottom: 30px; left: 0;
-            width: 100%; height: 80px;
+            width: 100%; height: 90px;
             display: flex; justify-content: center; align-items: center; gap: 20px;
             pointer-events: auto;
         }
 
         .control-btn {
             width: 60px; height: 60px;
-            background: rgba(255,255,255,0.9);
-            border: 2px solid #999; border-radius: 50%;
+            background: rgba(255,255,255,0.95);
+            border: 2px solid #888; border-radius: 50%;
             font-size: 24px; cursor: pointer;
             display: flex; justify-content: center; align-items: center;
             box-shadow: 0 4px 5px rgba(0,0,0,0.2);
@@ -59,7 +71,7 @@
             font-size: 32px;
         }
 
-        /* タイトル・ゲームオーバー画面 */
+        /* オーバーレイ */
         .overlay {
             position: absolute; top: 0; left: 0;
             width: 100%; height: 100%;
@@ -78,11 +90,13 @@
             margin-top: 15px; cursor: pointer;
         }
         
-        #ranking-list { padding: 0; list-style: none; }
-        #ranking-list li { margin: 5px 0; border-bottom: 1px solid #ddd; padding: 5px; width: 200px; display:flex; justify-content:space-between; }
+        #ranking-list { padding: 0; list-style: none; margin-top:10px;}
+        #ranking-list li { margin: 5px 0; border-bottom: 1px solid #ddd; padding: 5px; width: 220px; display:flex; justify-content:space-between; }
     </style>
 </head>
 <body>
+
+    <div id="debug-info">Initializing...</div>
 
     <div id="ui-layer">
         <div id="score-board">SCORE: <span id="score-val">0</span></div>
@@ -104,11 +118,11 @@
         <h1>GAME OVER</h1>
         <p>Score: <span id="final-score">0</span></p>
         <div id="input-area">
-            <input type="text" id="player-name" placeholder="名前" maxlength="8" style="padding:10px; font-size:16px; text-align:center;">
+            <input type="text" id="player-name" placeholder="名前を入力" maxlength="8" style="padding:10px; font-size:16px; text-align:center;">
             <br>
             <button class="primary-btn" onclick="saveScore()">ランキング登録</button>
             <br>
-            <button style="margin-top:10px; background:none; border:none; text-decoration:underline;" onclick="resetGame()">リトライ</button>
+            <button style="margin-top:15px; background:none; border:none; text-decoration:underline; color:#666;" onclick="resetGame()">リトライ</button>
         </div>
         <div id="ranking-area" class="hidden">
             <h3>ランキング</h3>
@@ -137,6 +151,7 @@
     const IMAGES = [];
     for(let i=1; i<=11; i++) IMAGES.push(`./img/${i}.png`);
 
+    // 画面サイズ
     let w = window.innerWidth;
     let h = window.innerHeight;
 
@@ -144,19 +159,20 @@
 
     function init() {
         engine = Engine.create();
+        
+        // レンダラー設定（重要：ピクセル比率を1に固定）
         render = Render.create({
             element: document.body,
             engine: engine,
             options: {
                 width: w,
                 height: h,
-                background: '#f0f0f0', // 背景色
-                wireframes: false,
-                pixelRatio: 1
+                background: '#f0f0f0',
+                wireframes: false, // 画像モード
+                pixelRatio: 1      // 座標ズレ防止
             }
         });
 
-        // 皿（Ground）の作成
         createGround();
 
         Render.run(render);
@@ -165,23 +181,25 @@
 
         Events.on(engine, 'beforeUpdate', updateLoop);
         
-        // リサイズ時の安全策
+        // リサイズ時のキャンバス調整
         window.addEventListener('resize', () => {
              render.canvas.width = window.innerWidth;
              render.canvas.height = window.innerHeight;
+             // 皿の位置も修正したいが、複雑になるので今回は表示領域だけ確保
         });
     }
 
     function createGround() {
         if(ground) Composite.remove(engine.world, ground);
         
-        // 画面の下端から少し上に配置
+        // 画面下端から30px上に配置
+        // Y座標は 上が0、下がh
         const groundY = h - 30; 
         
-        ground = Bodies.rectangle(w/2, groundY, w * 0.9, 40, { 
+        ground = Bodies.rectangle(w/2, groundY, w, 60, { 
             isStatic: true,
             label: 'Ground',
-            render: { fillStyle: '#8b4513' }
+            render: { fillStyle: '#8b4513' } // 茶色
         });
         Composite.add(engine.world, ground);
     }
@@ -194,7 +212,7 @@
         Composite.clear(engine.world);
         Engine.clear(engine);
 
-        // 画面サイズ再取得
+        // 画面サイズ再取得＆皿再配置
         w = window.innerWidth;
         h = window.innerHeight;
         render.canvas.width = w;
@@ -202,7 +220,7 @@
 
         createGround();
 
-        // カメラ位置を強制リセット（重要）
+        // カメラ位置を強制的に「初期位置」へ戻す
         Render.lookAt(render, {
             min: { x: 0, y: 0 },
             max: { x: w, y: h }
@@ -220,9 +238,10 @@
 
         const imgIndex = Math.floor(Math.random() * IMAGES.length);
         const imgPath = IMAGES[imgIndex];
+        // ランダム色（画像が無いときの保険）
         const randomColor = '#' + Math.floor(Math.random()*16777215).toString(16);
 
-        // 出現位置：カメラ上部
+        // 出現位置：現在のカメラ視点の上部(min.y) + 100px
         const spawnY = render.bounds.min.y + 100;
         const spawnX = w / 2;
 
@@ -230,7 +249,6 @@
             label: 'Pintxo',
             restitution: 0.1,
             friction: 0.5,
-            density: 0.002,
             render: {
                 fillStyle: randomColor, 
                 sprite: {
@@ -248,80 +266,87 @@
     }
 
     function updateLoop() {
-        if (!gameActive) return;
+        if (!gameActive) {
+            updateDebugInfo();
+            return;
+        }
 
-        // --- カメラ制御の修正版 ---
-        // 「まだ落下していない、操作中のピンチョス」は無視する！
-        // これでスタート直後のカメラ急上昇を防ぐ
+        // --- カメラ制御（修正版） ---
         
         let allBodies = Composite.allBodies(engine.world);
-        let highestY = ground.position.y; // 初期値は地面
-        
-        let hasLandedPieces = false;
+        // デフォルトは地面の位置
+        let highestY = ground.position.y;
+        let hasStack = false;
 
+        // 「静止したピンチョス」の中で一番高い(Yが小さい)ものを探す
         for(let b of allBodies) {
-            // 操作中のやつ(currentPintxo)は計算に入れない
-            if(b.label === 'Pintxo' && b !== currentPintxo) {
+            if(b.label === 'Pintxo' && b !== currentPintxo) { 
+                // 操作中のピンチョスはカメラ計算に入れない！
                 if(b.position.y < highestY) {
                     highestY = b.position.y;
-                    hasLandedPieces = true;
+                    hasStack = true;
                 }
             }
         }
 
-        // ターゲットY座標（一番上の積み木から画面半分くらい上を映す）
-        // 地面しかない時は、地面が映る位置をキープ
-        let targetY;
+        // ターゲット座標：一番上の物体が、画面の上から40%くらいの位置に来るように
+        let targetTopY = 0;
         
-        if (hasLandedPieces) {
-             // 積み上がってきたら追従
-             targetY = highestY - (h * 0.6); 
+        if (hasStack) {
+            targetTopY = highestY - (h * 0.4);
         } else {
-             // まだ積み木がないなら、Y=0（初期位置）を維持
-             targetY = 0;
+            targetTopY = 0; // まだ積んでないときは一番上が0
         }
 
-        // カメラが下に行き過ぎないように（地面より下を映さない）
-        if(targetY > 0) targetY = 0;
+        // 【重要】カメラの下限制限
+        // カメラの下端(targetTopY + h)が、地面(ground.y + 余裕)より下に行かないようにする
+        // つまり、targetTopY は ground.y - h より小さくなってはいけないが、
+        // 逆に targetTopY が大きくなりすぎると地面が上に浮く。
+        // ここでは「地面より下を映さない」ために、targetTopYの上限を0にする（Y=0より下にはスクロールしない）
+        if (targetTopY > 0) targetTopY = 0;
 
         // 現在のカメラ位置
-        const currentY = render.bounds.min.y;
+        const currentTopY = render.bounds.min.y;
 
-        // スムーズ移動（ターゲットが現在より上にある場合のみ動かす）
-        if (targetY < currentY) {
-            const newY = currentY + (targetY - currentY) * 0.05;
+        // スムーズ移動（上に移動するときだけ）
+        if (targetTopY < currentTopY) {
+            // 差分の5%ずつ移動
+            const newY = currentTopY + (targetTopY - currentTopY) * 0.05;
+            
             Render.lookAt(render, {
                 min: { x: 0, y: newY },
                 max: { x: w, y: newY + h }
             });
-        }
-        
-        // もし何らかのバグでカメラが地面を見失ったら強制リセット
-        if (render.bounds.max.y < ground.position.y - 100) {
-            // 地面が画面外(下)に行ってしまった場合
-            // 何もしない（上に積み上がっている正常な状態かもしれないので）
-            // ただし、積み木がないのに地面が見えない場合は戻す
-            if (!hasLandedPieces) {
-                 Render.lookAt(render, { min: { x: 0, y: 0 }, max: { x: w, y: h } });
-            }
+        } else if (currentTopY < 0 && !hasStack) {
+            // もしバグでカメラが上に行き過ぎていて、かつ積み木がないなら戻す
+             Render.lookAt(render, { min: { x: 0, y: 0 }, max: { x: w, y: h } });
         }
 
         // --- ゲームオーバー判定 ---
-        const deadLine = ground.position.y + h + 100;
-        
+        // 皿より画面高さ分くらい下に落ちたら
+        const deadLine = ground.position.y + h;
         allBodies.forEach(b => {
             if (b.label === 'Pintxo' && b !== currentPintxo) {
-                // 画面のはるか下に落ちたら
                 if (b.position.y > deadLine) {
                     gameOver();
                 }
             }
         });
+
+        updateDebugInfo();
     }
 
-    // --- 操作系 ---
+    function updateDebugInfo() {
+        const camY = Math.round(render.bounds.min.y);
+        const groundY = Math.round(ground ? ground.position.y : 0);
+        const objCount = Composite.allBodies(engine.world).length;
+        document.getElementById('debug-info').innerHTML = 
+            `Cam Y: ${camY} <br> Ground Y: ${groundY} <br> Objects: ${objCount}`;
+    }
+
+    // --- 操作 ---
     function move(dir) {
-        if(currentPintxo && !isDropping) Body.translate(currentPintxo, {x: dir*8, y:0});
+        if(currentPintxo && !isDropping) Body.translate(currentPintxo, {x: dir*6, y:0});
     }
     function rotate() {
         if(currentPintxo && !isDropping) Body.rotate(currentPintxo, Math.PI/4);
@@ -332,6 +357,7 @@
             Body.setStatic(currentPintxo, false);
             currentPintxo.isDropped = true;
             
+            // 次の生成予約
             setTimeout(() => {
                 if(gameActive) {
                     calcScore(currentPintxo);
@@ -342,6 +368,7 @@
     }
 
     function calcScore(body) {
+        // 皿からの高さ
         const diff = ground.position.y - body.position.y;
         if (diff > 0) {
             score += (Math.floor(diff / 10) + 10);
@@ -358,6 +385,7 @@
         document.getElementById('ranking-area').classList.add('hidden');
     }
 
+    // --- ランキング ---
     window.saveScore = function() {
         const name = document.getElementById('player-name').value || "名無し";
         const data = JSON.parse(localStorage.getItem('pintxosRank')) || [];
