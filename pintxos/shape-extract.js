@@ -1,18 +1,16 @@
-/* shape-extract.js (ULTRA SAFE)
-   - Never stops the game: always returns a Matter body
-   - Handles: decomp missing, fromVertices errors, getImageData SecurityError, image load errors
-   - Fix sprite "floating" by aligning sprite origin to alpha centroid (xOffset/yOffset)
+/* shape-extract.js
+   - Transparent PNG alpha -> outer contour polygon
+   - centroid from alpha area (not bbox)
+   - closed-curve resampling (stable)
+   - provides: window.ShapeExtract.makeBody(...)
 */
 
 (function () {
-  const cache = new Map(); // imgPath -> Promise<packed|null>
-
-  const clamp01 = (v) => (Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0.5);
+  const cache = new Map(); // imgPath -> Promise<packed>
 
   function loadImage(src) {
     return new Promise((resolve, reject) => {
       const img = new Image();
-      // ★ crossOrigin は付けない：CORSヘッダ無い環境だと画像ロード自体が死ぬことがある
       img.onload = () => resolve(img);
       img.onerror = reject;
       img.src = src;
@@ -28,14 +26,14 @@
     return a / 2;
   }
 
-  // Moore neighbor tracing (8-connected)
+  // Moore neighbor tracing on boundary pixels (8-connected)
   function traceMoore(boundary, W, H, sx, sy) {
     const dirs = [
       { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }, { x: -1, y: 1 },
       { x: -1, y: 0 }, { x: -1, y: -1 }, { x: 0, y: -1 }, { x: 1, y: -1 }
     ];
     let x = sx, y = sy;
-    let bx = sx - 1, by = sy;
+    let bx = sx - 1, by = sy; // backtrack
     const startX = x, startY = y;
     const out = [];
 
@@ -76,37 +74,46 @@
   }
 
   function dist(a, b) {
-    return Math.hypot(a.x - b.x, a.y - b.y);
+    const dx = a.x - b.x, dy = a.y - b.y;
+    return Math.hypot(dx, dy);
   }
 
-  // resample closed curve to fixed N points (stable)
+  // Closed polyline resampling: outputs exactly N points (stable, no DP destruction)
   function resampleClosed(points, N) {
     if (!points || points.length < 3) return points;
-
-    const ring = [];
+    // remove consecutive duplicates
+    const pts = [];
     for (let i = 0; i < points.length; i++) {
       const p = points[i];
-      const prev = ring[ring.length - 1];
-      if (!prev || prev.x !== p.x || prev.y !== p.y) ring.push(p);
+      const prev = pts[pts.length - 1];
+      if (!prev || prev.x !== p.x || prev.y !== p.y) pts.push(p);
     }
-    if (ring.length < 3) return ring;
+    if (pts.length < 3) return pts;
 
+    // ensure closed by not duplicating last=first; we will treat as ring
+    const ring = pts.slice();
     const M = ring.length;
+
+    // cumulative perimeter
     const cum = [0];
     let perim = 0;
-
     for (let i = 0; i < M; i++) {
-      perim += dist(ring[i], ring[(i + 1) % M]);
+      const a = ring[i];
+      const b = ring[(i + 1) % M];
+      perim += dist(a, b);
       cum.push(perim);
     }
+
     if (perim <= 1e-6) return ring;
 
     const step = perim / N;
     const out = [];
+    let target = 0;
     let seg = 0;
 
     for (let k = 0; k < N; k++) {
-      const target = k * step;
+      target = k * step;
+
       while (seg < M && cum[seg + 1] < target) seg++;
 
       const a = ring[seg % M];
@@ -115,142 +122,124 @@
       const segStart = cum[seg];
       const t = Math.min(1, Math.max(0, (target - segStart) / segLen));
 
-      out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+      out.push({
+        x: a.x + (b.x - a.x) * t,
+        y: a.y + (b.y - a.y) * t
+      });
     }
     return out;
   }
 
-  async function extract(imgPath, cfg = {}) {
+  async function extract(imgPath, cfg) {
+    // cache as Promise to avoid duplicated work
     if (cache.has(imgPath)) return cache.get(imgPath);
 
     const p = (async () => {
-      try {
-        const img = await loadImage(imgPath);
-        const iw = img.naturalWidth, ih = img.naturalHeight;
-        if (!iw || !ih) return null;
+      const img = await loadImage(imgPath);
+      const iw = img.naturalWidth, ih = img.naturalHeight;
 
-        const threshold = cfg.threshold ?? 18;     // ★薄い下端が欠けるなら 12〜18 に
-        const sampleScale = cfg.sampleScale ?? 0.35;
-        const nPoints = cfg.nPoints ?? 160;
+      const threshold = cfg.threshold ?? 25;
+      const sampleScale = cfg.sampleScale ?? 0.35;
 
-        const W = Math.max(32, Math.floor(iw * sampleScale));
-        const H = Math.max(32, Math.floor(ih * sampleScale));
-        const inv = 1 / sampleScale;
+      const W = Math.max(32, Math.floor(iw * sampleScale));
+      const H = Math.max(32, Math.floor(ih * sampleScale));
 
-        const cvs = document.createElement("canvas");
-        cvs.width = W; cvs.height = H;
-        const ctx = cvs.getContext("2d", { willReadFrequently: true });
-        ctx.clearRect(0, 0, W, H);
-        ctx.drawImage(img, 0, 0, W, H);
+      const cvs = document.createElement("canvas");
+      cvs.width = W; cvs.height = H;
+      const ctx = cvs.getContext("2d", { willReadFrequently: true });
+      ctx.clearRect(0, 0, W, H);
+      ctx.drawImage(img, 0, 0, W, H);
 
-        let imgData;
-        try {
-          imgData = ctx.getImageData(0, 0, W, H);
-        } catch (e) {
-          // CORSなどで taint -> ここは諦めてフォールバック
-          console.warn("[ShapeExtract] getImageData failed -> fallback shape:", imgPath);
-          return null;
-        }
+      const data = ctx.getImageData(0, 0, W, H).data;
+      const mask = new Uint8Array(W * H);
 
-        const data = imgData.data;
-        const mask = new Uint8Array(W * H);
+      // centroid (area-weighted) in downsample coords
+      let solid = 0;
+      let sumX = 0, sumY = 0;
 
-        let solid = 0, sumX = 0, sumY = 0;
-        for (let y = 0; y < H; y++) {
-          for (let x = 0; x < W; x++) {
-            const i = (y * W + x) * 4;
-            const a = data[i + 3];
-            if (a > threshold) {
-              mask[y * W + x] = 1;
-              solid++;
-              sumX += x;
-              sumY += y;
-            }
+      // boundary start candidate = topmost-leftmost boundary pixel
+      // compute mask first
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          const i = (y * W + x) * 4;
+          const a = data[i + 3];
+          if (a > threshold) {
+            mask[y * W + x] = 1;
+            solid++;
+            sumX += x;
+            sumY += y;
           }
         }
-        if (solid < 50) return null;
-
-        const cx = sumX / solid;
-        const cy = sumY / solid;
-
-        const boundary = new Uint8Array(W * H);
-        let sx = -1, sy = -1;
-
-        for (let y = 1; y < H - 1; y++) {
-          for (let x = 1; x < W - 1; x++) {
-            const idx = y * W + x;
-            if (!mask[idx]) continue;
-            if (!mask[idx - 1] || !mask[idx + 1] || !mask[idx - W] || !mask[idx + W]) {
-              boundary[idx] = 1;
-              if (sy === -1 || y < sy || (y === sy && x < sx)) { sx = x; sy = y; }
-            }
-          }
-        }
-        if (sx === -1) return null;
-
-        const contour = traceMoore(boundary, W, H, sx, sy);
-        if (!contour || contour.length < 30) return null;
-
-        let pts = contour.map(p => ({ x: (p.x - cx) * inv, y: (p.y - cy) * inv }));
-        pts = resampleClosed(pts, nPoints);
-        if (!pts || pts.length < 10) return null;
-
-        if (polygonArea(pts) > 0) pts.reverse(); // clockwise
-
-        // sprite origin aligned to alpha centroid
-        const cxOrig = cx * inv;
-        const cyOrig = cy * inv;
-        const xOffset = clamp01(cxOrig / iw);
-        const yOffset = clamp01(cyOrig / ih);
-
-        return { pts, iw, ih, xOffset, yOffset };
-      } catch (e) {
-        console.warn("[ShapeExtract] extract failed -> fallback shape:", imgPath, e);
-        return null;
       }
+      if (solid < 50) return null;
+
+      const cx = sumX / solid;
+      const cy = sumY / solid;
+
+      // boundary map
+      const boundary = new Uint8Array(W * H);
+      let sx = -1, sy = -1;
+      for (let y = 1; y < H - 1; y++) {
+        for (let x = 1; x < W - 1; x++) {
+          const idx = y * W + x;
+          if (!mask[idx]) continue;
+          if (!mask[idx - 1] || !mask[idx + 1] || !mask[idx - W] || !mask[idx + W]) {
+            boundary[idx] = 1;
+            if (sy === -1 || y < sy || (y === sy && x < sx)) { sx = x; sy = y; }
+          }
+        }
+      }
+      if (sx === -1) return null;
+
+      // trace outer contour
+      const contour = traceMoore(boundary, W, H, sx, sy);
+      if (!contour || contour.length < 30) return null;
+
+      // convert to original pixel coords centered by centroid
+      const inv = 1 / sampleScale;
+      let pts = contour.map(p => ({
+        x: (p.x - cx) * inv,
+        y: (p.y - cy) * inv
+      }));
+
+      // Stable simplification: resample to fixed point count
+      const nPoints = cfg.nPoints ?? 140;
+      pts = resampleClosed(pts, nPoints);
+
+      // avoid degenerate
+      if (!pts || pts.length < 10) return null;
+
+      // ensure clockwise for Matter stability
+      if (polygonArea(pts) > 0) pts.reverse();
+
+      return { pts, iw, ih };
     })();
 
     cache.set(imgPath, p);
     return p;
   }
 
-  function ensureDecomp() {
-    // fromVerticesで必要（concave対応）
-    try {
-      if (window.Matter && window.decomp && window.Matter.Common && window.Matter.Common.setDecomp) {
-        window.Matter.Common.setDecomp(window.decomp);
-      }
-    } catch (_) {}
-  }
-
+  // Public: create Matter body from image path using extracted contour
   async function makeBody(imgPath, x, y, opt = {}) {
     const Matter = window.Matter;
     if (!Matter) throw new Error("Matter.js not loaded");
 
-    ensureDecomp();
+    const cfg = opt.shapeCfg ?? {};
+    const packed = await extract(imgPath, cfg);
 
     const fallback = {
       pts: [
-        { x: -60, y: -35 }, { x: 60, y: -35 }, { x: 80, y: 0 },
-        { x: 60, y: 35 }, { x: -60, y: 35 }, { x: -80, y: 0 }
+        { x: -50, y: -35 }, { x: 50, y: -35 }, { x: 70, y: 0 },
+        { x: 50, y: 35 }, { x: -50, y: 35 }, { x: -70, y: 0 }
       ],
-      iw: 160,
-      ih: 90,
-      xOffset: 0.5,
-      yOffset: 0.5
+      iw: 140,
+      ih: 90
     };
 
-    let packed = null;
-    try {
-      packed = await extract(imgPath, opt.shapeCfg ?? {});
-    } catch (_) {
-      packed = null;
-    }
+    const { pts, iw, ih } = packed ?? fallback;
 
-    const { pts, iw, ih, xOffset, yOffset } = packed ?? fallback;
-
-    const targetSize = opt.targetSize ?? 125;
-    const hitInset = opt.hitInset ?? 0.98;
+    const targetSize = opt.targetSize ?? 120;  // final on-screen size (px-ish)
+    const hitInset = opt.hitInset ?? 0.95;     // shrink collider a bit to avoid "air hit"
     const spriteScale = targetSize / Math.max(iw, ih);
 
     const bodyOpts = Object.assign({
@@ -259,48 +248,30 @@
       friction: 0.8
     }, opt.bodyOpts || {});
 
-    let body = null;
+    // create body from vertices
+    let body = Matter.Bodies.fromVertices(x, y, [pts], bodyOpts, true);
 
-    // ★ここが重要：fromVerticesが例外を投げても必ず fallback に行く
-    try {
-      body = Matter.Bodies.fromVertices(x, y, [pts], bodyOpts, true);
-    } catch (e) {
-      console.warn("[ShapeExtract] fromVertices failed -> rectangle fallback:", imgPath, e);
-      body = null;
+    // If fromVertices fails (rare), fallback to rectangle
+    if (!body) {
+      body = Matter.Bodies.rectangle(x, y, targetSize, targetSize, bodyOpts);
     }
 
-    if (!body) body = Matter.Bodies.rectangle(x, y, targetSize, targetSize, bodyOpts);
-
+    // scale collider to match sprite scale (+ inset)
     Matter.Body.scale(body, spriteScale * hitInset, spriteScale * hitInset);
 
-    // 画像が読めない時でも“見える”ように塗りを残す
+    // sprite render
     body.render = body.render || {};
-    body.render.fillStyle = "#bdbdbd";
-    body.render.strokeStyle = "#888";
-    body.render.lineWidth = 1;
-
-    // sprite (成功したら画像表示)
     body.render.sprite = {
       texture: imgPath,
       xScale: spriteScale,
-      yScale: spriteScale,
-      xOffset: clamp01(xOffset),
-      yOffset: clamp01(yOffset)
+      yScale: spriteScale
     };
-
-    // 画像がロード失敗する環境なら sprite を捨てて灰色形状で表示
-    try {
-      const t = new Image();
-      t.onload = () => {}; // OK
-      t.onerror = () => {
-        // sprite消すと fillStyle が描かれる
-        if (body.render && body.render.sprite) delete body.render.sprite;
-      };
-      t.src = imgPath;
-    } catch (_) {}
 
     return body;
   }
 
-  window.ShapeExtract = { extract, makeBody };
+  window.ShapeExtract = {
+    extract,
+    makeBody
+  };
 })();
