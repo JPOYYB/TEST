@@ -1,0 +1,54 @@
+{
+  "animals": [
+    {
+      "id": 1,
+      "src": "assets/animals/1.png",
+      "label": "1"
+    },
+    {
+      "id": 2,
+      "src": "assets/animals/2.png",
+      "label": "2"
+    },
+    {
+      "id": 3,
+      "src": "assets/animals/3.png",
+      "label": "3"
+    },
+    {
+      "id": 4,
+      "src": "assets/animals/4.png",
+      "label": "4"
+    },
+    {
+      "id": 5,
+      "src": "assets/animals/5.png",
+      "label": "5"
+    },
+    {
+      "id": 6,
+      "src": "assets/animals/6.png",
+      "label": "6"
+    },
+    {
+      "id": 7,
+      "src": "assets/animals/7.png",
+      "label": "7"
+    },
+    {
+      "id": 8,
+      "src": "assets/animals/8.png",
+      "label": "8"
+    },
+    {
+      "id": 9,
+      "src": "assets/animals/9.png",
+      "label": "9"
+    },
+    {
+      "id": 10,
+      "src": "assets/animals/10.png",
+      "label": "10"
+    }
+  ]
+}

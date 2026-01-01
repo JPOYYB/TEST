@@ -1,0 +1,22 @@
+{
+  "name": "タワーバトル",
+  "short_name": "タワーバトル",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0b1020",
+  "theme_color": "#0b1020",
+  "description": "スマホ向けHTMLゲーム：タワーバトル",
+  "icons": [
+    {
+      "src": "assets/ui/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/ui/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
