@@ -1,8 +1,7 @@
-/* shape-extract.js v7
-   Fixes:
-   - pick LARGEST connected component (ignore tiny specks / separated small parts)
-   - if contour tracing is short, build convex hull from edge points (still a polygon, not RECT)
-   - auto-crop alpha bbox + upscale analysis
+/* shape-extract.js v8
+   - largest connected component
+   - hull fallback (never RECT unless everything fails)
+   - DEBUG互換: fallback/verts/parts/xOffset/yOffset など復活
 */
 
 (function () {
@@ -42,8 +41,6 @@
 
   function resampleClosed(points, N){
     if(!points || points.length<3) return points;
-
-    // remove consecutive duplicates
     const ring=[];
     for(const p of points){
       const prev = ring[ring.length-1];
@@ -76,7 +73,6 @@
     return out;
   }
 
-  // erosion (optional): remove 1px halo/soft edge
   function erode(mask, W, H, iter){
     let m=mask;
     for(let it=0; it<iter; it++){
@@ -99,15 +95,10 @@
     return m;
   }
 
-  // connected components (8-neighbor). returns mask of largest component + stats
   function largestComponent(mask, W, H){
     const vis = new Uint8Array(W*H);
-    const neigh = [
-      -1, 1, -W, W, -W-1, -W+1, W-1, W+1
-    ];
-    let bestCount=0;
-    let bestIdxs=null;
-    let comps=0;
+    const neigh = [-1, 1, -W, W, -W-1, -W+1, W-1, W+1];
+    let bestCount=0, bestIdxs=null, comps=0;
 
     for(let i=0;i<W*H;i++){
       if(!mask[i] || vis[i]) continue;
@@ -119,12 +110,15 @@
         const p=q.pop();
         idxs.push(p);
         const y = Math.floor(p/W), x = p - y*W;
+
         for(const d of neigh){
           const n = p + d;
           if(n<0 || n>=W*H) continue;
-          // row-wrap guard for +/-1
+
+          // row wrap guard
           if((d===-1 || d===-W-1 || d===W-1) && x===0) continue;
           if((d===1  || d===-W+1 || d===W+1) && x===W-1) continue;
+
           if(mask[n] && !vis[n]){
             vis[n]=1;
             q.push(n);
@@ -138,9 +132,7 @@
     }
 
     const out = new Uint8Array(W*H);
-    if(bestIdxs){
-      for(const p of bestIdxs) out[p]=1;
-    }
+    if(bestIdxs) for(const p of bestIdxs) out[p]=1;
     return { out, comps, bestCount };
   }
 
@@ -160,7 +152,6 @@
     return { boundary, sx, sy };
   }
 
-  // Moore neighbor tracing on boundary map
   function traceMoore(boundary, W, H, sx, sy){
     const dirs=[
       {x:1,y:0},{x:1,y:1},{x:0,y:1},{x:-1,y:1},
@@ -195,18 +186,15 @@
         }
       }
       if(!found) break;
-      steps++;
-      if(steps>safety) break;
+      if(++steps>safety) break;
     } while(!(x===startX && y===startY));
 
     return out;
   }
 
-  // collect edge points (for hull fallback)
-  function collectEdgePoints(mask, W, H, maxPts=4000){
+  function collectEdgePoints(mask, W, H, maxPts=5000){
     const pts=[];
-    let step = 1;
-    // rough limiter
+    let step=1;
     const approx = W*H/3;
     if(approx>maxPts) step = Math.ceil(approx/maxPts);
 
@@ -216,7 +204,7 @@
         const idx=y*W+x;
         if(!mask[idx]) continue;
         if(!mask[idx-1] || !mask[idx+1] || !mask[idx-W] || !mask[idx+W]){
-          if((c++ % step)===0) pts.push({x,y});
+          if((c++%step)===0) pts.push({x,y});
         }
       }
     }
@@ -234,14 +222,15 @@
         const iw=img.naturalWidth, ih=img.naturalHeight;
         if(!iw || !ih){ out.reason="natural size 0"; return out; }
 
-        const alphaThreshold = cfg.alphaThreshold ?? cfg.threshold ?? 1; // ←より拾う
+        // ★ ここは現実寄り：境界の半透明も拾う
+        const alphaThreshold = cfg.alphaThreshold ?? cfg.threshold ?? 1;
         const nPoints = cfg.nPoints ?? 140;
         const padPx = cfg.padPx ?? 2;
-        const analysisMax = cfg.analysisMax ?? 420;   // ←少し上げる
-        const minContour = cfg.minContour ?? 30;      // ←短くても採用（最終的にhullがある）
-        const erodePx = cfg.erodePx ?? 0;             // まず0で（消える事故を減らす）
+        const analysisMax = cfg.analysisMax ?? 460;
+        const minContour = cfg.minContour ?? 20;
+        const erodePx = cfg.erodePx ?? 0;
 
-        // base scan for bbox + centroid (alpha)
+        // scan full image for bbox + centroid
         const base=document.createElement("canvas");
         base.width=iw; base.height=ih;
         const bctx=base.getContext("2d",{willReadFrequently:true});
@@ -267,15 +256,12 @@
             }
           }
         }
-
         if(solid<60){ out.reason="too few solid pixels (mask empty?)"; return out; }
 
         const solidRatio = solid/(iw*ih);
         const cx0 = sumX/solid, cy0=sumY/solid;
-
         const bboxW=maxX-minX+1, bboxH=maxY-minY+1;
 
-        // crop with padding (keep within original dims)
         const cropX=Math.max(0,minX-padPx);
         const cropY=Math.max(0,minY-padPx);
         const cropX2=Math.min(iw-1,maxX+padPx);
@@ -283,9 +269,9 @@
         const cropW=cropX2-cropX+1;
         const cropH=cropY2-cropY+1;
 
-        // upscale analysis canvas
+        // upscale analysis
         const scale = analysisMax/Math.max(cropW,cropH);
-        const s = Math.min(10.0, Math.max(1.0, scale)); // 小さいほど拡大
+        const s = Math.min(12.0, Math.max(1.0, scale));
         const W=Math.max(96, Math.round(cropW*s));
         const H=Math.max(96, Math.round(cropH*s));
         const inv=1/s;
@@ -299,7 +285,6 @@
         const aData=actx.getImageData(0,0,W,H).data;
         let mask=new Uint8Array(W*H);
         let aSolid=0;
-
         for(let y=0;y<H;y++){
           for(let x=0;x<W;x++){
             const i=(y*W+x)*4;
@@ -313,14 +298,13 @@
 
         if(erodePx>0) mask = erode(mask, W, H, erodePx);
 
-        // choose largest component
+        // ★ 最大連結成分だけ採用（ゴミ点を完全無視）
         const cc = largestComponent(mask, W, H);
         const compMask = cc.out;
 
-        // boundary + trace
+        // trace boundary
         const { boundary, sx, sy } = buildBoundary(compMask, W, H);
-        let contour = null;
-        let contourLen = 0;
+        let contour=null, contourLen=0, usedHull=false;
 
         if(sx!==-1){
           const c = traceMoore(boundary, W, H, sx, sy);
@@ -333,31 +317,29 @@
           }
         }
 
-        // hull fallback (still polygon, not rect)
-        let usedHull = false;
+        // hull fallback
         if(!contour){
-          // use edge points -> convex hull
           const Matter = window.Matter;
           if(!Matter?.Vertices?.hull){
-            out.reason = "contour too short (and Matter.Vertices.hull missing)";
+            out.reason="contour too short (Vertices.hull missing)";
             return out;
           }
-          const edgePts = collectEdgePoints(compMask, W, H, 5000);
-          if(edgePts.length < 10){
-            out.reason = "contour too short (edgePts too few)";
+          const edgePts = collectEdgePoints(compMask, W, H, 6000);
+          if(edgePts.length < 12){
+            out.reason="contour too short (edge pts too few)";
             return out;
           }
           const hull = Matter.Vertices.hull(edgePts);
           if(!hull || hull.length < 6){
-            out.reason = "contour too short (hull failed)";
+            out.reason="contour too short (hull failed)";
             return out;
           }
           contour = hull.map(p=>({
             x:(cropX + p.x*inv) - cx0,
             y:(cropY + p.y*inv) - cy0
           }));
-          usedHull = true;
           contourLen = hull.length;
+          usedHull = true;
         }
 
         let pts = resampleClosed(contour, nPoints);
@@ -371,9 +353,8 @@
         out.xOffset=Math.max(0,Math.min(1,cx0/iw));
         out.yOffset=Math.max(0,Math.min(1,cy0/ih));
         out.solidRatio=solidRatio;
-
         out._dbg={
-          version:"v7",
+          version:"v8",
           bboxW,bboxH,cropW,cropH,
           analysisW:W, analysisH:H, analysisScale:s,
           comps:cc.comps, bestCount:cc.bestCount,
@@ -403,8 +384,9 @@
     const packed = await extract(maskPath, opt.shapeCfg ?? {});
 
     const targetSize = opt.targetSize ?? 150;
-    const hitInset   = opt.hitInset ?? 0.98; // ちょい小さめ（隙間詰め）
-    const spriteScale = targetSize / Math.max(packed.bw || 1, packed.bh || 1);
+    const hitInset   = opt.hitInset ?? 0.985; // 詰めたいので少し攻める
+    const bw = packed?.bw || 1, bh = packed?.bh || 1;
+    const spriteScale = targetSize / Math.max(bw, bh);
 
     const bodyOpts = Object.assign({
       label:"Pintxo",
@@ -429,7 +411,7 @@
       reason = packed?.reason || "extract failed";
     }
 
-    // last-resort rectangle (should be rare now)
+    // last resort RECT (本来ここには来ない)
     if(!body){
       body = Matter.Bodies.rectangle(x, y, targetSize, targetSize, bodyOpts);
       body.__dbg_forceRect = true;
@@ -450,17 +432,26 @@
       yOffset: packed?.yOffset ?? 0.5
     };
 
+    // ★あなたのDEBUG互換キー（ここが本題）
+    const xOff = body.render.sprite.xOffset ?? 0.5;
+    const yOff = body.render.sprite.yOffset ?? 0.5;
+
     body.__dbg = {
-      version:"v7",
-      texturePath, maskPath,
-      fallback: usedFallback,
-      reason,
-      hasDecomp: !!window.decomp,
-      verts: body.vertices?.length ?? 0,
-      parts: body.parts?.length ?? 0,
+      // 表示が || で潰されないように「文字列」も持たせる
+      fallback: usedFallback ? "true" : "false",
+      fallbackBool: usedFallback,
+      reason: usedFallback ? reason : "",
+      verts: body.vertices ? body.vertices.length : 0,
+      parts: body.parts ? body.parts.length : 0,
+      xOffset: xOff,
+      yOffset: yOff,
       solidRatio: packed?.solidRatio,
-      spriteScale, hitInset,
-      offset: [body.render.sprite.xOffset, body.render.sprite.yOffset],
+      spriteScale: spriteScale,
+      hitInset: hitInset,
+      hasDecomp: !!window.decomp,
+      version: "v8",
+      tex: texturePath,
+      mask: maskPath,
       dbg: packed?._dbg || null,
       forcedRect: !!body.__dbg_forceRect
     };
@@ -468,5 +459,9 @@
     return body;
   }
 
-  window.ShapeExtract = { extract, makeBody, setDebug, _debugLast:()=>DEBUG.last };
+  window.ShapeExtract = {
+    VERSION: "v8",
+    extract, makeBody, setDebug,
+    _debugLast: ()=>DEBUG.last
+  };
 })();
