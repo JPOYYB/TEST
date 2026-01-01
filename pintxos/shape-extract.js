@@ -1,25 +1,27 @@
-/* shape-extract.js  (ShapeExtract v10)
- * - Mask PNGの「アルファ(不透明)」から輪郭を抽出してMatter.js用ポリゴンを作る
- * - 失敗したら理由付きでrect fallback
+/* shape-extract.js  (ShapeExtract v11)
+ * Fixes:
+ * - sprite offset uses CONTOUR CENTROID (not bbox center) => polygon aligns with sprite
+ * - choose largest connected component (avoid picking tiny garnish/toothpick first)
+ * - optional dilation to preserve thin structures (morphDilate)
  */
 (function () {
   "use strict";
 
   const ShapeExtract = {};
-  ShapeExtract.version = "v10";
+  ShapeExtract.version = "v11";
 
-  // ===== CONFIG (ここだけ触れば調整できる) =====
+  // ===== CONFIG =====
   const CONFIG = {
-    alphaThreshold: 10,     // マスクの不透明判定（0-255）
-    pad: 1,                // bboxの余白（px）
-    maxVerts: 64,          // 頂点数上限（多すぎると不安定）
-    simplifyEps: 1.6,      // 輪郭簡略化の強さ（大=荒くなる）
-    minArea: 30,           // 小さすぎる形状はfallback
-    minContour: 30,        // 輪郭点が短すぎるとfallback
+    alphaThreshold: 2,     // 透明/不透明の境界（低めでOK）
+    pad: 1,               // bbox余白(px)
+    morphDilate: 1,       // 0=なし / 1〜2で細部を太らせる（繊細構造に効く）
+    maxVerts: 96,         // 細部を拾うため少し増やす（増やしすぎると不安定）
+    simplifyEps: 1.1,     // 小さいほど形に沿う（小さすぎるとギザる）
+    minArea: 40,
+    minContour: 35
   };
 
-  // ---- small utils ----
-  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
   function loadImage(url) {
     return new Promise((resolve, reject) => {
@@ -27,7 +29,7 @@
       img.crossOrigin = "anonymous";
       img.onload = () => resolve(img);
       img.onerror = () => reject(new Error(`image load failed: ${url}`));
-      img.src = url + (url.includes("?") ? "" : `?v=${Date.now()}`); // キャッシュ殺し（デバッグ用）
+      img.src = url + (url.includes("?") ? "" : `?v=${Date.now()}`);
     });
   }
 
@@ -51,7 +53,6 @@
     }
     a *= 0.5;
     if (Math.abs(a) < 1e-6) {
-      // fallback: average
       let sx = 0, sy = 0;
       for (const p of pts) { sx += p.x; sy += p.y; }
       return { x: sx / pts.length, y: sy / pts.length };
@@ -66,10 +67,9 @@
     return dx * dx + dy * dy;
   }
 
-  // Ramer–Douglas–Peucker
+  // RDP simplify
   function simplifyRDP(points, epsilon) {
     if (points.length <= 3) return points;
-
     const eps2 = epsilon * epsilon;
 
     function perpDist2(p, a, b) {
@@ -86,8 +86,7 @@
 
     function rdp(pts) {
       let maxD = 0, idx = -1;
-      const a = pts[0];
-      const b = pts[pts.length - 1];
+      const a = pts[0], b = pts[pts.length - 1];
       for (let i = 1; i < pts.length - 1; i++) {
         const d = perpDist2(pts[i], a, b);
         if (d > maxD) { maxD = d; idx = i; }
@@ -101,14 +100,128 @@
     }
 
     const out = rdp(points);
-    // 閉じポリゴンのため、最後が最初と同じなら落とす
     if (out.length >= 2 && dist2(out[0], out[out.length - 1]) < 0.01) out.pop();
     return out;
   }
 
-  // Moore-Neighbor boundary tracing (binary image)
+  function removeNearDuplicates(pts, minDist = 0.8) {
+    if (pts.length <= 3) return pts;
+    const out = [pts[0]];
+    const md2 = minDist * minDist;
+    for (let i = 1; i < pts.length; i++) {
+      if (dist2(pts[i], out[out.length - 1]) >= md2) out.push(pts[i]);
+    }
+    if (out.length > 3 && dist2(out[0], out[out.length - 1]) < md2) out.pop();
+    return out;
+  }
+
+  function limitVerts(pts, maxVerts) {
+    if (pts.length <= maxVerts) return pts;
+    const out = [];
+    const step = pts.length / maxVerts;
+    for (let i = 0; i < maxVerts; i++) out.push(pts[Math.floor(i * step)]);
+    return out;
+  }
+
+  // 8-neighbor dilation (radius 1 or 2)
+  function dilate(bin, w, h, r) {
+    if (!r || r <= 0) return bin;
+    const out = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (!bin[y * w + x]) continue;
+        for (let dy = -r; dy <= r; dy++) {
+          for (let dx = -r; dx <= r; dx++) {
+            const nx = x + dx, ny = y + dy;
+            if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+            out[ny * w + nx] = 1;
+          }
+        }
+      }
+    }
+    // union (元のbinも残す)
+    for (let i = 0; i < out.length; i++) if (bin[i]) out[i] = 1;
+    return out;
+  }
+
+  // Connected components: pick largest (by pixel count)
+  function pickLargestComponent(bin, w, h) {
+    const vis = new Uint8Array(w * h);
+    let best = null;
+    let compCount = 0;
+
+    const qx = new Int32Array(w * h);
+    const qy = new Int32Array(w * h);
+
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const idx = y * w + x;
+        if (!bin[idx] || vis[idx]) continue;
+
+        compCount++;
+        let head = 0, tail = 0;
+        qx[tail] = x; qy[tail] = y; tail++;
+        vis[idx] = 1;
+
+        let cnt = 0;
+        let minX = x, minY = y, maxX = x, maxY = y;
+
+        while (head < tail) {
+          const cx = qx[head], cy = qy[head]; head++;
+          cnt++;
+
+          if (cx < minX) minX = cx;
+          if (cy < minY) minY = cy;
+          if (cx > maxX) maxX = cx;
+          if (cy > maxY) maxY = cy;
+
+          // 4-neighborでOK（細い連結が切れにくい）
+          const nb = [
+            [cx - 1, cy], [cx + 1, cy],
+            [cx, cy - 1], [cx, cy + 1],
+          ];
+          for (const [nx, ny] of nb) {
+            if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+            const ni = ny * w + nx;
+            if (!bin[ni] || vis[ni]) continue;
+            vis[ni] = 1;
+            qx[tail] = nx; qy[tail] = ny; tail++;
+          }
+        }
+
+        if (!best || cnt > best.count) {
+          best = { count: cnt, minX, minY, maxX, maxY };
+        }
+      }
+    }
+
+    if (!best) return { ok: false, compCount: 0 };
+
+    const bw = best.maxX - best.minX + 1;
+    const bh = best.maxY - best.minY + 1;
+    const out = new Uint8Array(bw * bh);
+
+    for (let y = best.minY; y <= best.maxY; y++) {
+      for (let x = best.minX; x <= best.maxX; x++) {
+        const v = bin[y * w + x];
+        if (!v) continue;
+        out[(y - best.minY) * bw + (x - best.minX)] = 1;
+      }
+    }
+
+    return {
+      ok: true,
+      compCount,
+      bin: out,
+      w: bw,
+      h: bh,
+      bbox: { x: best.minX, y: best.minY, w: bw, h: bh },
+      count: best.count
+    };
+  }
+
+  // Boundary tracing (Moore-like)
   function traceBoundary(bin, w, h) {
-    // start: 上から走査して最初の境界画素
     let sx = -1, sy = -1;
     for (let y = 0; y < h && sy === -1; y++) {
       for (let x = 0; x < w; x++) {
@@ -120,7 +233,6 @@
     }
     if (sx === -1) return null;
 
-    // neighbors (clockwise)
     const N = [
       { dx: -1, dy: -1 }, { dx: 0, dy: -1 }, { dx: 1, dy: -1 },
       { dx: 1, dy: 0 }, { dx: 1, dy: 1 }, { dx: 0, dy: 1 },
@@ -128,7 +240,7 @@
     ];
 
     let x = sx, y = sy;
-    let px = sx - 1, py = sy; // previous point (west)
+    let px = sx - 1, py = sy;
     const contour = [];
     const maxIter = w * h * 8;
 
@@ -138,65 +250,37 @@
       return 0;
     }
 
-    const startPrevIndex = idxOfNeighbor(x, y, px, py);
-    let prevIndex = startPrevIndex;
+    let prevIndex = idxOfNeighbor(x, y, px, py);
 
     for (let iter = 0; iter < maxIter; iter++) {
       contour.push({ x: x + 0.5, y: y + 0.5 });
 
-      // search neighbors starting from (prevIndex+1) mod 8
       let found = false;
-      let nextIndex = (prevIndex + 1) % 8;
-
+      const start = (prevIndex + 1) % 8;
       for (let k = 0; k < 8; k++) {
-        const ni = (nextIndex + k) % 8;
+        const ni = (start + k) % 8;
         const nx = x + N[ni].dx;
         const ny = y + N[ni].dy;
         if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
         if (bin[ny * w + nx]) {
-          // move
           px = x; py = y;
           x = nx; y = ny;
-          prevIndex = (ni + 5) % 8; // opposite-ish
+          prevIndex = (ni + 5) % 8;
           found = true;
           break;
         }
       }
-
       if (!found) break;
-
-      // closed?
       if (x === sx && y === sy && px === (sx - 1) && py === sy) break;
-      if (contour.length > 10 && dist2(contour[0], contour[contour.length - 1]) < 0.25) break;
+      if (contour.length > 12 && dist2(contour[0], contour[contour.length - 1]) < 0.25) break;
     }
-
     return contour.length ? contour : null;
-  }
-
-  function removeNearDuplicates(pts, minDist = 0.8) {
-    if (pts.length <= 3) return pts;
-    const out = [pts[0]];
-    const md2 = minDist * minDist;
-    for (let i = 1; i < pts.length; i++) {
-      if (dist2(pts[i], out[out.length - 1]) >= md2) out.push(pts[i]);
-    }
-    // last vs first
-    if (out.length > 3 && dist2(out[0], out[out.length - 1]) < md2) out.pop();
-    return out;
-  }
-
-  function limitVerts(pts, maxVerts) {
-    if (pts.length <= maxVerts) return pts;
-    // 等間引き
-    const out = [];
-    const step = pts.length / maxVerts;
-    for (let i = 0; i < maxVerts; i++) out.push(pts[Math.floor(i * step)]);
-    return out;
   }
 
   function extractFromMask(maskImg, opts = {}) {
     const alphaTh = (opts.alphaThreshold ?? CONFIG.alphaThreshold);
     const pad = (opts.pad ?? CONFIG.pad);
+    const dil = (opts.morphDilate ?? CONFIG.morphDilate);
 
     const srcW = maskImg.naturalWidth || maskImg.width;
     const srcH = maskImg.naturalHeight || maskImg.height;
@@ -213,7 +297,6 @@
     let minX = srcW, minY = srcH, maxX = -1, maxY = -1;
     let solid = 0;
 
-    // bbox
     for (let y = 0; y < srcH; y++) {
       for (let x = 0; x < srcW; x++) {
         const i = (y * srcW + x) * 4;
@@ -237,23 +320,43 @@
     maxX = clamp(maxX + pad, 0, srcW - 1);
     maxY = clamp(maxY + pad, 0, srcH - 1);
 
-    const cropW = maxX - minX + 1;
-    const cropH = maxY - minY + 1;
+    const cropW0 = maxX - minX + 1;
+    const cropH0 = maxY - minY + 1;
 
-    // crop binary
-    const bin = new Uint8Array(cropW * cropH);
-    let cropSolid = 0;
-    for (let y = 0; y < cropH; y++) {
-      for (let x = 0; x < cropW; x++) {
+    let bin0 = new Uint8Array(cropW0 * cropH0);
+    let cropSolid0 = 0;
+    for (let y = 0; y < cropH0; y++) {
+      for (let x = 0; x < cropW0; x++) {
         const sx = minX + x, sy = minY + y;
         const i = (sy * srcW + sx) * 4;
         const a = data[i + 3];
         const v = a > alphaTh ? 1 : 0;
-        bin[y * cropW + x] = v;
-        cropSolid += v;
+        bin0[y * cropW0 + x] = v;
+        cropSolid0 += v;
       }
     }
 
+    // thicken a bit (helps thin structures and closes tiny gaps)
+    bin0 = dilate(bin0, cropW0, cropH0, dil);
+
+    // pick largest component (avoid tiny garnish picked first)
+    const picked = pickLargestComponent(bin0, cropW0, cropH0);
+    if (!picked.ok) {
+      return { ok: false, reason: "no component after bin", meta: { srcW, srcH } };
+    }
+
+    const bin = picked.bin;
+    const cropW = picked.w;
+    const cropH = picked.h;
+
+    // refine crop origin (absolute in src)
+    const compMinX = picked.bbox.x;
+    const compMinY = picked.bbox.y;
+    const absMinX = minX + compMinX;
+    const absMinY = minY + compMinY;
+
+    let cropSolid = 0;
+    for (let i = 0; i < bin.length; i++) cropSolid += bin[i];
     const solidRatio = cropSolid / (cropW * cropH);
 
     // contour
@@ -262,11 +365,10 @@
       return {
         ok: false,
         reason: "contour too short",
-        meta: { srcW, srcH, minX, minY, cropW, cropH, solidRatio }
+        meta: { srcW, srcH, absMinX, absMinY, cropW, cropH, solidRatio, compCount: picked.compCount }
       };
     }
 
-    // simplify + cleanup
     contour = removeNearDuplicates(contour, 0.6);
     contour = simplifyRDP(contour, CONFIG.simplifyEps);
     contour = removeNearDuplicates(contour, 0.8);
@@ -276,45 +378,49 @@
       return {
         ok: false,
         reason: "too few verts after simplify",
-        meta: { srcW, srcH, minX, minY, cropW, cropH, solidRatio }
+        meta: { srcW, srcH, absMinX, absMinY, cropW, cropH, solidRatio, compCount: picked.compCount }
       };
     }
 
-    // centroid in crop coords
     const area = polygonArea(contour);
     if (Math.abs(area) < CONFIG.minArea) {
       return {
         ok: false,
         reason: "area too small",
-        meta: { srcW, srcH, minX, minY, cropW, cropH, solidRatio, area }
+        meta: { srcW, srcH, absMinX, absMinY, cropW, cropH, solidRatio, area, compCount: picked.compCount }
       };
     }
 
-    // Matterは時計回りが扱いやすい（逆なら反転）
     let pts = contour.slice();
     if (area > 0) pts.reverse();
 
     const centroid = polygonCentroid(pts);
-    // center around centroid: verts are in "crop pixel space", centered
     const verts = pts.map(p => ({ x: p.x - centroid.x, y: p.y - centroid.y }));
 
-    // sprite anchor offset (texture coords): crop中心をbody中心に合わせたい
-    const cropCenterX = (minX + cropW / 2) / srcW;
-    const cropCenterY = (minY + cropH / 2) / srcH;
+    // IMPORTANT: sprite offset should match the SAME point as body center (= centroid in src coords)
+    const centroidAbsX = absMinX + centroid.x;
+    const centroidAbsY = absMinY + centroid.y;
 
     return {
       ok: true,
       verts,
       parts: 1,
       solidRatio,
-      bbox: { x: minX, y: minY, w: cropW, h: cropH },
       crop: { w: cropW, h: cropH },
-      offset: { x: cropCenterX, y: cropCenterY },
-      meta: { srcW, srcH, minX, minY, cropW, cropH }
+      bbox: { x: absMinX, y: absMinY, w: cropW, h: cropH },
+      offset: { x: centroidAbsX / srcW, y: centroidAbsY / srcH }, // ←これがズレ解消の核心
+      meta: {
+        version: ShapeExtract.version,
+        srcW, srcH,
+        absMinX, absMinY, cropW, cropH,
+        centroidAbsX, centroidAbsY,
+        compCount: picked.compCount,
+        pickedPixels: picked.count,
+        dilate: dil
+      }
     };
   }
 
-  // Public API
   ShapeExtract.preload = async function ({
     count,
     texPattern = "img/{i}.png",
@@ -328,13 +434,11 @@
       const [texImg, maskImg] = await Promise.all([loadImage(texUrl), loadImage(maskUrl)]);
       const shape = extractFromMask(maskImg);
       assets.push({ i, texUrl, maskUrl, texImg, maskImg, shape });
-      assets[i - 1] = assets[assets.length - 1];
       log({ i, texUrl, maskUrl, shape });
     }
     return assets;
   };
 
   ShapeExtract.extractFromMask = extractFromMask;
-
   window.ShapeExtract = ShapeExtract;
 })();
