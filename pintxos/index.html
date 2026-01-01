@@ -7,32 +7,28 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/poly-decomp@0.3.0/build/decomp.min.js"></script>
-  <script src="./shape-extract.js?v=10"></script>
+  <script src="./shape-extract.js?v=11"></script>
 
   <style>
-    body { margin:0; padding:0; overflow:hidden; background:#f0f0f0; font-family: system-ui, -apple-system, Segoe UI, sans-serif; touch-action:none; }
-    #game-root { position:fixed; inset:0; z-index:0; }
-    canvas { position:absolute; inset:0; width:100%; height:100%; display:block; }
-    #ui-layer { position:fixed; inset:0; z-index:10; pointer-events:none; }
-    #score-board { position:absolute; top:18px; left:18px; font-size:28px; font-weight:800; color:#222; text-shadow:2px 2px 0 #fff; }
-    #controls { position:absolute; bottom:22px; left:0; width:100%; height:92px; display:flex; justify-content:center; align-items:center; gap:18px; pointer-events:auto; }
-    .control-btn { width:64px; height:64px; background:rgba(255,255,255,.95); border:2px solid #888; border-radius:50%; font-size:26px; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 10px rgba(0,0,0,.18); user-select:none; -webkit-user-select:none; }
-    .control-btn:active { transform:translateY(2px); background:#e6e6e6; }
-    #btn-drop { width:88px; height:88px; background:#ff4757; color:#fff; border:none; font-size:34px; }
-
-    .overlay { position:fixed; inset:0; background:rgba(255,255,255,.96); display:flex; flex-direction:column; justify-content:center; align-items:center; z-index:20; pointer-events:auto; }
-    .hidden { display:none !important; }
-    .primary-btn { padding:14px 36px; font-size:18px; background:#2ecc71; color:#fff; border:none; border-radius:999px; cursor:pointer; margin-top:14px; }
-
-    #debug-btn { position:fixed; top:14px; right:14px; z-index:30; pointer-events:auto; background:#111; color:#fff; border:none; padding:10px 14px; border-radius:999px; box-shadow:0 6px 18px rgba(0,0,0,.25); font-weight:700; }
-    #debug-panel { position:fixed; right:14px; top:64px; width:min(360px, calc(100vw - 28px)); z-index:30; pointer-events:auto; background:rgba(20,20,20,.88); color:#fff; border-radius:16px; padding:14px; font-size:13px; line-height:1.35; white-space:pre-wrap; }
-    #debug-panel.hidden { display:none !important; }
-    #debug-panel code { color:#b8ffb8; }
-
-    #loading { text-align:center; }
-    #loading h1 { margin:0 0 6px 0; font-size:40px; }
-    #loading p { margin:0 0 18px 0; color:#333; }
-    #loading .pill { padding:14px 28px; border-radius:999px; background:#2ecc71; color:#fff; font-weight:800; }
+    body{margin:0;overflow:hidden;background:#f0f0f0;font-family:system-ui,-apple-system,Segoe UI,sans-serif;touch-action:none;}
+    #game-root{position:fixed;inset:0;z-index:0;}
+    canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
+    #ui-layer{position:fixed;inset:0;z-index:10;pointer-events:none;}
+    #score-board{position:absolute;top:18px;left:18px;font-size:28px;font-weight:800;color:#222;text-shadow:2px 2px 0 #fff;}
+    #controls{position:absolute;bottom:22px;left:0;width:100%;height:92px;display:flex;justify-content:center;align-items:center;gap:18px;pointer-events:auto;}
+    .control-btn{width:64px;height:64px;background:rgba(255,255,255,.95);border:2px solid #888;border-radius:50%;font-size:26px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 10px rgba(0,0,0,.18);user-select:none;-webkit-user-select:none;}
+    .control-btn:active{transform:translateY(2px);background:#e6e6e6;}
+    #btn-drop{width:88px;height:88px;background:#ff4757;color:#fff;border:none;font-size:34px;}
+    .overlay{position:fixed;inset:0;background:rgba(255,255,255,.96);display:flex;flex-direction:column;justify-content:center;align-items:center;z-index:20;pointer-events:auto;}
+    .hidden{display:none!important;}
+    .primary-btn{padding:14px 36px;font-size:18px;background:#2ecc71;color:#fff;border:none;border-radius:999px;cursor:pointer;margin-top:14px;}
+    #debug-btn{position:fixed;top:14px;right:14px;z-index:30;pointer-events:auto;background:#111;color:#fff;border:none;padding:10px 14px;border-radius:999px;box-shadow:0 6px 18px rgba(0,0,0,.25);font-weight:700;}
+    #debug-panel{position:fixed;right:14px;top:64px;width:min(360px,calc(100vw - 28px));z-index:30;pointer-events:auto;background:rgba(20,20,20,.88);color:#fff;border-radius:16px;padding:14px;font-size:13px;line-height:1.35;white-space:pre-wrap;}
+    #debug-panel.hidden{display:none!important;}
+    #loading{text-align:center;}
+    #loading h1{margin:0 0 6px 0;font-size:40px;}
+    #loading p{margin:0 0 18px 0;color:#333;}
+    #loading .pill{padding:14px 28px;border-radius:999px;background:#2ecc71;color:#fff;font-weight:800;}
   </style>
 </head>
 
@@ -73,16 +69,12 @@
 <script>
 (() => {
   "use strict";
-
-  // ===== 多重起動防止（これが無いと “大量スポーン + UI消失” が起きる） =====
   if (window.__PT_BOOTED__) return;
   window.__PT_BOOTED__ = true;
 
-  const {
-    Engine, Render, Runner, Bodies, Composite, Events, Body, Common
-  } = Matter;
+  const { Engine, Render, Runner, Bodies, Composite, Events, Body, Common, Sleeping } = Matter;
 
-  // ===== CONFIG（ここだけ触れば調整できる） =====
+  // ===== CONFIG（調整ポイントはここだけ） =====
   const CONFIG = {
     ASSET_COUNT: 11,
     TEX_PATTERN: "img/{i}.png",
@@ -92,26 +84,30 @@
     groundWidthRatio: 0.75,
     groundThickness: 18,
 
-    // 見た目サイズ（bbox基準で揃える）
-    targetMaxPx: 150,
-
-    // 当たり判定の“詰め具合”（1.00=抽出そのまま / 1.03で隙間が埋まりやすい）
-    hitScale: 1.02,
+    targetMaxPx: 150,   // 見た目サイズ
+    hitScale: 1.03,     // 隙間が気になるなら 1.04〜1.06
 
     moveStep: 8,
     rotateStep: Math.PI / 10,
 
-    // 落下後に「止まった」と判定する条件
-    settleSpeed: 0.14,
-    settleFrames: 18,
+    // settle（「止まった」判定）: touched後のみ
+    settleSpeed: 0.16,
+    settleFrames: 20,
 
-    // ミス判定（地面よりこれだけ下に落ちたら負け）
+    // 20秒ルール：ここで強制スリープ
+    forceStopMs: 20000,
+
+    // ブルブル対策
+    frictionAir: 0.035,     // 空気抵抗（上げると早く止まる）
+    sleepThreshold: 35,     // 小さいほど寝やすい（止まりやすい）
+    positionIterations: 7,  // 安定化（増やしすぎ注意）
+    velocityIterations: 6,
+
     missExtra: 520,
 
     debugDefault: true
   };
 
-  // ===== UI refs =====
   const elScore = document.getElementById("score-val");
   const elLoading = document.getElementById("loading");
   const elLoadingText = document.getElementById("loading-text");
@@ -124,445 +120,404 @@
 
   const btnStart = document.getElementById("btn-start");
   const btnRetry = document.getElementById("btn-retry");
-
   const btnL = document.getElementById("btn-left");
   const btnR = document.getElementById("btn-right");
   const btnRot = document.getElementById("btn-rotate");
   const btnDrop = document.getElementById("btn-drop");
 
-  // ===== debug toggle =====
   const qs = new URLSearchParams(location.search);
   let debugOn = qs.get("debug") === "1" || CONFIG.debugDefault || localStorage.getItem("PT_DEBUG") === "1";
-  function setDebug(on) {
-    debugOn = !!on;
-    localStorage.setItem("PT_DEBUG", debugOn ? "1" : "0");
-    elDebugPanel.classList.toggle("hidden", !debugOn);
-  }
-  elDebugBtn.addEventListener("click", () => setDebug(!debugOn));
+  function setDebug(on){ debugOn=!!on; localStorage.setItem("PT_DEBUG",debugOn?"1":"0"); elDebugPanel.classList.toggle("hidden",!debugOn); }
+  elDebugBtn.addEventListener("click",()=>setDebug(!debugOn));
   setDebug(debugOn);
+  function logDebug(lines){ if(!debugOn) return; elDebugPanel.textContent = Array.isArray(lines)?lines.join("\n"):String(lines); }
 
-  function logDebug(lines) {
-    if (!debugOn) return;
-    const text = Array.isArray(lines) ? lines.join("\n") : String(lines);
-    elDebugPanel.textContent = text;
-  }
+  const size = ()=>({w:innerWidth,h:innerHeight});
 
-  // ===== Engine/Render =====
   let engine, render, runner;
   let ground;
   let assets = [];
   let score = 0;
   let gameActive = false;
 
-  let current = null;           // 現在操作しているピンチョス
-  let dropping = false;         // drop中
-  let settleCount = 0;          // settle判定用
+  let current = null;
+  let dropping = false;
+  let settleCount = 0;
+  let spawning = false;   // スポーン多重防止
 
-  // debug draw
-  let drawPoly = true;
-
-  // ===== helpers =====
-  function size() { return { w: window.innerWidth, h: window.innerHeight }; }
-
-  function ensureLibs() {
-    const okMatter = !!Matter;
-    const okDecomp = !!window.decomp;
-    const okShape = !!window.ShapeExtract;
-    return { okMatter, okDecomp, okShape };
+  function ensureLibs(){
+    return { okMatter: !!Matter, okDecomp: !!window.decomp, okShape: !!window.ShapeExtract };
   }
 
-  async function unregisterSWIfAny() {
-    try {
-      if (!("serviceWorker" in navigator)) return;
-      const regs = await navigator.serviceWorker.getRegistrations();
-      if (regs.length && debugOn) {
-        for (const r of regs) await r.unregister();
-        console.log(`[SW] found ${regs.length} registrations -> unregister (debug)`);
-      }
-    } catch (e) {}
-  }
-
-  function createWorld() {
-    const { w, h } = size();
-
+  function createWorld(){
+    const {w,h}=size();
     engine = Engine.create();
     engine.gravity.y = 1;
 
-    // decomp enable
+    // sleeping ON（永久ブルブル対策の本丸）
+    engine.enableSleeping = true;
+    engine.positionIterations = CONFIG.positionIterations;
+    engine.velocityIterations = CONFIG.velocityIterations;
+
     if (Common && Common.setDecomp && window.decomp) Common.setDecomp(window.decomp);
 
-    const root = document.getElementById("game-root");
-    root.innerHTML = "";
-
+    const root=document.getElementById("game-root");
+    root.innerHTML="";
     render = Render.create({
       element: root,
       engine,
-      options: {
-        width: w,
-        height: h,
-        wireframes: false,
-        background: "#f0f0f0",
-        pixelRatio: 1
-      }
+      options: { width:w, height:h, wireframes:false, background:"#f0f0f0", pixelRatio:1 }
     });
-
     Render.run(render);
 
     runner = Runner.create();
     Runner.run(runner, engine);
 
-    Events.on(engine, "beforeUpdate", updateLoop);
-    Events.on(render, "afterRender", drawDebugOverlay);
-
-    window.addEventListener("resize", onResize, { passive: true });
-  }
-
-  function onResize() {
-    const { w, h } = size();
-    render.canvas.width = w;
-    render.canvas.height = h;
-    Render.lookAt(render, { min: { x: 0, y: render.bounds.min.y }, max: { x: w, y: render.bounds.min.y + h } });
-    createGround(); // 画面幅に追従
-  }
-
-  function createGround() {
-    const { w, h } = size();
-    if (ground) Composite.remove(engine.world, ground);
-
-    const y = h - CONFIG.groundHeightFromBottom;
-    const width = w * CONFIG.groundWidthRatio;
-
-    ground = Bodies.rectangle(w / 2, y, width, CONFIG.groundThickness, {
-      isStatic: true,
-      label: "Ground",
-      friction: 1.0,
-      render: { fillStyle: "#8b4513" }
+    Events.on(engine,"beforeUpdate",updateLoop);
+    Events.on(render,"afterRender",drawDebugOverlay);
+    Events.on(engine,"collisionStart",(ev)=>{
+      if(!current) return;
+      for(const p of ev.pairs){
+        if(p.bodyA===current || p.bodyB===current){
+          current.__touched = true; // ← touched後だけ settle する
+        }
+      }
     });
 
-    // 壁（落下しやすさ調整用：必要ならON）
-    const wallL = Bodies.rectangle(-40, y - 800, 80, 2000, { isStatic: true, render: { visible: false }});
-    const wallR = Bodies.rectangle(w + 40, y - 800, 80, 2000, { isStatic: true, render: { visible: false }});
-
-    Composite.add(engine.world, [ground, wallL, wallR]);
+    addEventListener("resize",onResize,{passive:true});
   }
 
-  function clearWorldKeepRenderer() {
-    Composite.clear(engine.world, false);
+  function onResize(){
+    const {w,h}=size();
+    render.canvas.width=w; render.canvas.height=h;
+    createGround();
+  }
+
+  function createGround(){
+    const {w,h}=size();
+    if(ground) Composite.remove(engine.world,ground);
+
+    const y=h - CONFIG.groundHeightFromBottom;
+    const width=w * CONFIG.groundWidthRatio;
+
+    ground = Bodies.rectangle(w/2,y,width,CONFIG.groundThickness,{
+      isStatic:true,label:"Ground",friction:1.0,render:{fillStyle:"#8b4513"}
+    });
+    const wallL=Bodies.rectangle(-40,y-800,80,2000,{isStatic:true,render:{visible:false}});
+    const wallR=Bodies.rectangle(w+40,y-800,80,2000,{isStatic:true,render:{visible:false}});
+    Composite.add(engine.world,[ground,wallL,wallR]);
+  }
+
+  function clearWorld(){
+    Composite.clear(engine.world,false);
     Engine.clear(engine);
     createGround();
   }
 
-  // ===== spawn / body creation =====
-  function pickAsset() {
-    return assets[Math.floor(Math.random() * assets.length)];
-  }
+  function pickAsset(){ return assets[(Math.random()*assets.length)|0]; }
 
-  function makeBodyFromAsset(asset, x, y) {
-    const shape = asset.shape;
-    const tex = asset.texUrl;
+  function makeBodyFromAsset(asset,x,y){
+    const shape=asset.shape;
+    const tex=asset.texUrl;
 
-    // fallback rect（ただし“勝手にたくさん出る”原因にはしない）
-    function rectFallback(reason) {
-      const bbox = shape.meta ? { w: shape.meta.cropW || 80, h: shape.meta.cropH || 50 } : { w: 80, h: 50 };
-      const scale = CONFIG.targetMaxPx / Math.max(bbox.w, bbox.h);
-      const bw = bbox.w * scale;
-      const bh = bbox.h * scale;
-
-      const body = Bodies.rectangle(x, y, bw, bh, {
-        label: "Pintxo",
-        restitution: 0.05,
-        friction: 0.9,
-        frictionStatic: 0.9,
-        render: {
-          sprite: { texture: tex, xScale: scale, yScale: scale, xOffset: 0.5, yOffset: 0.5 }
-        }
+    function rectFallback(reason){
+      const bbox = shape?.meta ? { w: shape.meta.cropW || 80, h: shape.meta.cropH || 50 } : { w:80, h:50 };
+      const scale = CONFIG.targetMaxPx / Math.max(bbox.w,bbox.h);
+      const body = Bodies.rectangle(x,y,bbox.w*scale,bbox.h*scale,{
+        label:"Pintxo",
+        restitution:0.05,
+        friction:0.95,
+        frictionStatic:0.95,
+        frictionAir:CONFIG.frictionAir,
+        sleepThreshold:CONFIG.sleepThreshold,
+        render:{ sprite:{ texture:tex, xScale:scale, yScale:scale, xOffset:0.5, yOffset:0.5 } }
       });
-
-      body.__dbg = { fallback: true, reason, verts: 4, solid: (shape.solidRatio ?? 0), crop: `${bbox.w}x${bbox.h}`, offset: "0.5,0.5", scale };
+      body.__dbg={fallback:true,reason,verts:4,solid:(shape?.solidRatio??0),offset:"0.5,0.5",scale};
       return body;
     }
 
-    if (!shape || !shape.ok) {
-      return rectFallback(shape?.reason || "shape missing");
-    }
+    if(!shape || !shape.ok) return rectFallback(shape?.reason || "shape missing");
 
-    const cropW = shape.crop.w, cropH = shape.crop.h;
-    const scale = CONFIG.targetMaxPx / Math.max(cropW, cropH);
+    const cropW=shape.crop.w, cropH=shape.crop.h;
+    const scale = CONFIG.targetMaxPx / Math.max(cropW,cropH);
 
-    // verts (centered) -> scale
-    let verts = shape.verts.map(p => ({ x: p.x * scale * CONFIG.hitScale, y: p.y * scale * CONFIG.hitScale }));
+    const verts = shape.verts.map(p=>({ x:p.x*scale*CONFIG.hitScale, y:p.y*scale*CONFIG.hitScale }));
 
-    // Create body from vertices
     let body;
-    try {
-      body = Bodies.fromVertices(x, y, [verts], {
-        label: "Pintxo",
-        restitution: 0.05,
-        friction: 0.9,
-        frictionStatic: 0.9,
-        render: {
-          sprite: {
-            texture: tex,
-            xScale: scale,
-            yScale: scale,
-            xOffset: shape.offset.x,
-            yOffset: shape.offset.y
+    try{
+      body = Bodies.fromVertices(x,y,[verts],{
+        label:"Pintxo",
+        restitution:0.05,
+        friction:0.95,
+        frictionStatic:0.95,
+        frictionAir:CONFIG.frictionAir,
+        sleepThreshold:CONFIG.sleepThreshold,
+        render:{
+          sprite:{
+            texture:tex,
+            xScale:scale, yScale:scale,
+            xOffset:shape.offset.x, yOffset:shape.offset.y  // ← v11で「重心offset」になってズレが消える
           }
         }
-      }, true);
-    } catch (e) {
-      body = null;
-    }
+      },true);
+    }catch(e){ body=null; }
 
-    if (!body) {
-      return rectFallback("fromVertices failed");
-    }
+    if(!body) return rectFallback("fromVertices failed");
 
-    body.__dbg = {
-      fallback: false,
-      reason: "-",
-      verts: shape.verts.length,
-      solid: shape.solidRatio.toFixed(3),
-      crop: `${cropW}x${cropH}`,
-      offset: `${shape.offset.x.toFixed(3)},${shape.offset.y.toFixed(3)}`,
+    body.__dbg={
+      fallback:false,reason:"-",verts:shape.verts.length,
+      solid:shape.solidRatio.toFixed(3),
+      offset:`${shape.offset.x.toFixed(3)},${shape.offset.y.toFixed(3)}`,
       scale
     };
-
     return body;
   }
 
-  function spawnOne() {
-    if (!gameActive) return;
+  function spawnOne(){
+    if(!gameActive) return;
+    if(spawning) return;
+    if(current) return; // ← 多重スポーン防止
+    spawning = true;
 
-    const { w } = size();
-    const camTop = render.bounds.min.y;
-
+    const {w}=size();
+    const topY = render.bounds.min.y;
     const asset = pickAsset();
-    const x = w / 2;
-    const y = camTop + 120;
 
-    const body = makeBodyFromAsset(asset, x, y);
-    Body.setStatic(body, true);
+    const body = makeBodyFromAsset(asset, w/2, topY + 120);
+    Body.setStatic(body,true);
+    body.__asset=asset;
+    body.__isCurrent=true;
+    body.__touched=false;
+    body.__dropAt=0;
 
-    body.__asset = asset;
-    body.__isCurrent = true;
-    body.__dropped = false;
+    Composite.add(engine.world,body);
+    current=body;
+    dropping=false;
+    settleCount=0;
 
-    Composite.add(engine.world, body);
-
-    current = body;
-    dropping = false;
-    settleCount = 0;
-
-    if (debugOn) {
+    if(debugOn){
       logDebug([
-        `[BOOT] debugOn=${debugOn}`,
-        `[LIB] Matter=${!!Matter} decomp=${!!window.decomp} ShapeExtract=${!!window.ShapeExtract}`,
-        ``,
         `Spawn`,
         `tex: ${asset.texUrl}`,
         `mask: ${asset.maskUrl}`,
         `ShapeExtract: ${window.ShapeExtract?.version || "?"}`,
-        ``,
-        `fallback: ${body.__dbg.fallback}`,
-        `reason: ${body.__dbg.reason}`,
-        `verts: ${body.__dbg.verts}`,
-        `solidRatio: ${body.__dbg.solid}`,
-        `crop: ${body.__dbg.crop}`,
-        `spriteScale: ${body.__dbg.scale.toFixed(3)} hitScale:${CONFIG.hitScale.toFixed(2)}`,
-        `offset: (${body.__dbg.offset})`,
+        `fallback: ${body.__dbg.fallback} reason:${body.__dbg.reason}`,
+        `verts:${body.__dbg.verts} solid:${body.__dbg.solid}`,
+        `spriteScale:${body.__dbg.scale.toFixed(3)} hitScale:${CONFIG.hitScale.toFixed(2)}`,
+        `offset:(${body.__dbg.offset})`,
       ]);
     }
+
+    // 連打でdrop→spawnが暴れないように少しだけロック
+    setTimeout(()=>{ spawning=false; }, 250);
   }
 
-  // ===== camera / scoring / miss =====
-  function topOfStackY() {
-    let y = ground.position.y;
-    for (const b of Composite.allBodies(engine.world)) {
-      if (b.label === "Pintxo" && !b.__isCurrent) y = Math.min(y, b.position.y);
+  function topOfStackY(){
+    let y=ground.position.y;
+    for(const b of Composite.allBodies(engine.world)){
+      if(b.label==="Pintxo" && !b.__isCurrent) y=Math.min(y,b.position.y);
     }
     return y;
   }
 
-  function updateCamera() {
-    const { w, h } = size();
-    const highestY = topOfStackY();
-    const hasStack = highestY < ground.position.y;
+  function updateCamera(){
+    const {w,h}=size();
+    const highestY=topOfStackY();
+    const hasStack=highestY<ground.position.y;
 
-    let targetTopY = 0;
-    if (hasStack) targetTopY = highestY - h * 0.55;
-    if (targetTopY > 0) targetTopY = 0;
+    let targetTopY=0;
+    if(hasStack) targetTopY=highestY - h*0.55;
+    if(targetTopY>0) targetTopY=0;
 
-    const curTopY = render.bounds.min.y;
-    const nextTopY = curTopY + (targetTopY - curTopY) * 0.06;
+    const curTopY=render.bounds.min.y;
+    const nextTopY=curTopY + (targetTopY-curTopY)*0.06;
 
-    Render.lookAt(render, {
-      min: { x: 0, y: nextTopY },
-      max: { x: w, y: nextTopY + h }
-    });
+    Render.lookAt(render,{min:{x:0,y:nextTopY},max:{x:w,y:nextTopY+h}});
   }
 
-  function addScoreFor(body) {
-    const diff = ground.position.y - body.position.y;
-    if (diff > 0) {
-      score += Math.floor(diff / 10) + 10;
-      elScore.textContent = score;
-    }
-  }
-
-  function checkMiss() {
-    const missLine = ground.position.y + CONFIG.missExtra;
-    for (const b of Composite.allBodies(engine.world)) {
-      if (b.label !== "Pintxo") continue;
-      if (b.position.y > missLine) return true;
+  function checkMiss(){
+    const missLine=ground.position.y + CONFIG.missExtra;
+    for(const b of Composite.allBodies(engine.world)){
+      if(b.label!=="Pintxo") continue;
+      if(b.position.y>missLine) return true;
     }
     return false;
   }
 
-  function updateLoop() {
-    if (!gameActive) return;
+  function addScoreFor(body){
+    const diff=ground.position.y - body.position.y;
+    if(diff>0){ score += (diff/10|0) + 10; elScore.textContent=score; }
+  }
+
+  function forceStopCurrent(reason){
+    if(!current) return;
+    // touchedしてないのに20秒なら、何かおかしい＝落ちてる/ハマってる → 負け扱いでもOKだが、
+    // ここは「止めて次へ」で進める
+    Body.setVelocity(current,{x:0,y:0});
+    Body.setAngularVelocity(current,0);
+    Sleeping.set(current,true);
+
+    current.__isCurrent=false;
+    addScoreFor(current);
+
+    current=null;
+    dropping=false;
+    settleCount=0;
+
+    spawnOne();
+
+    if(debugOn){
+      logDebug([
+        `FORCE STOP (${reason})`,
+        `→ 20秒以内に必ず進行`,
+        `（永久ブルブル防止）`
+      ]);
+    }
+  }
+
+  function updateLoop(){
+    if(!gameActive) return;
 
     updateCamera();
+    if(checkMiss()){ gameOver(); return; }
 
-    // miss判定（下に消えたら負け）
-    if (checkMiss()) {
-      gameOver();
-      return;
+    // 「止まりかけ」のやつは積極的にsleepさせる（微振動を断ち切る）
+    for(const b of Composite.allBodies(engine.world)){
+      if(b.label!=="Pintxo") continue;
+      if(b.__isCurrent) continue;
+      const sp=Math.hypot(b.velocity.x,b.velocity.y);
+      if(sp < 0.03 && Math.abs(b.angularVelocity) < 0.02){
+        Sleeping.set(b,true);
+      }
     }
 
-    // drop後のsettle判定：止まったら次をspawn
-    if (current && dropping) {
-      const v = current.velocity;
-      const speed = Math.hypot(v.x, v.y);
-      if (speed < CONFIG.settleSpeed) settleCount++;
-      else settleCount = 0;
+    if(current && dropping){
+      const now = performance.now();
+      const elapsed = now - (current.__dropAt || now);
 
-      if (settleCount >= CONFIG.settleFrames) {
-        // currentを確定
-        current.__isCurrent = false;
-        addScoreFor(current);
-        current = null;
-        dropping = false;
-        settleCount = 0;
-        spawnOne();
+      // 20秒強制停止
+      if(elapsed > CONFIG.forceStopMs){
+        forceStopCurrent("20s timeout");
+        return;
+      }
+
+      // touched後のみsettle判定（空中で「止まった扱い」になる事故防止）
+      if(current.__touched){
+        const v=current.velocity;
+        const sp=Math.hypot(v.x,v.y);
+        if(sp < CONFIG.settleSpeed && Math.abs(current.angularVelocity) < 0.06) settleCount++;
+        else settleCount=0;
+
+        if(settleCount >= CONFIG.settleFrames){
+          // 確定して次へ
+          Sleeping.set(current,true);
+          current.__isCurrent=false;
+          addScoreFor(current);
+
+          current=null;
+          dropping=false;
+          settleCount=0;
+          spawnOne();
+        }
       }
     }
   }
 
-  function gameOver() {
-    gameActive = false;
-    elFinal.textContent = score;
-    elControls.classList.add("hidden");
-    elOver.classList.remove("hidden");
-  }
-
-  // ===== controls =====
-  function move(dir) {
-    if (!current || dropping) return;
-    Body.translate(current, { x: dir * CONFIG.moveStep, y: 0 });
-  }
-  function rotate() {
-    if (!current || dropping) return;
-    Body.rotate(current, CONFIG.rotateStep);
-  }
-  function drop() {
-    if (!current || dropping) return;
-    dropping = true;
-    current.__dropped = true;
-    Body.setStatic(current, false);
-  }
-
-  function hold(btn, action) {
-    let t = null;
-    const start = (e) => { e.preventDefault(); action(); t = setInterval(action, 50); };
-    const end = (e) => { e.preventDefault(); if (t) clearInterval(t); t = null; };
-    btn.addEventListener("touchstart", start, { passive: false });
-    btn.addEventListener("touchend", end, { passive: false });
-    btn.addEventListener("mousedown", start);
-    btn.addEventListener("mouseup", end);
-    btn.addEventListener("mouseleave", end);
-  }
-
-  hold(btnL, () => move(-1));
-  hold(btnR, () => move(1));
-  btnRot.addEventListener("click", rotate);
-  btnRot.addEventListener("touchstart", (e) => { e.preventDefault(); rotate(); }, { passive: false });
-  btnDrop.addEventListener("click", drop);
-  btnDrop.addEventListener("touchstart", (e) => { e.preventDefault(); drop(); }, { passive: false });
-
-  btnStart.addEventListener("click", startGame);
-  btnRetry.addEventListener("click", () => { elOver.classList.add("hidden"); startGame(); });
-
-  // ===== debug overlay draw =====
-  function drawDebugOverlay() {
-    if (!debugOn || !drawPoly) return;
-    const ctx = render.context;
-    const bodies = Composite.allBodies(engine.world).filter(b => b.label === "Pintxo");
+  function drawDebugOverlay(){
+    if(!debugOn) return;
+    const ctx=render.context;
+    const bodies=Composite.allBodies(engine.world).filter(b=>b.label==="Pintxo");
     ctx.save();
-    ctx.lineWidth = 2;
-
-    for (const b of bodies) {
-      const verts = b.vertices;
-      if (!verts || verts.length < 3) continue;
+    ctx.lineWidth=2;
+    for(const b of bodies){
+      const v=b.vertices;
+      if(!v||v.length<3) continue;
       ctx.beginPath();
-      ctx.moveTo(verts[0].x, verts[0].y);
-      for (let i = 1; i < verts.length; i++) ctx.lineTo(verts[i].x, verts[i].y);
+      ctx.moveTo(v[0].x,v[0].y);
+      for(let i=1;i<v.length;i++) ctx.lineTo(v[i].x,v[i].y);
       ctx.closePath();
-      ctx.strokeStyle = b.__isCurrent ? "rgba(0,255,120,0.95)" : "rgba(0,180,255,0.35)";
+      ctx.strokeStyle=b.__isCurrent ? "rgba(0,255,120,0.95)" : "rgba(0,180,255,0.35)";
       ctx.stroke();
     }
     ctx.restore();
   }
 
-  // ===== game flow =====
-  async function boot() {
+  function move(dir){
+    if(!current || dropping) return;
+    Body.translate(current,{x:dir*CONFIG.moveStep,y:0});
+  }
+  function rotate(){
+    if(!current || dropping) return;
+    Body.rotate(current,CONFIG.rotateStep);
+  }
+  function drop(){
+    if(!current || dropping) return;
+    dropping=true;
+    current.__dropAt = performance.now();
+    Body.setStatic(current,false);
+  }
+
+  function hold(btn,action){
+    let t=null;
+    const start=(e)=>{ e.preventDefault(); action(); t=setInterval(action,50); };
+    const end=(e)=>{ e.preventDefault(); if(t) clearInterval(t); t=null; };
+    btn.addEventListener("touchstart",start,{passive:false});
+    btn.addEventListener("touchend",end,{passive:false});
+    btn.addEventListener("mousedown",start);
+    btn.addEventListener("mouseup",end);
+    btn.addEventListener("mouseleave",end);
+  }
+  hold(btnL,()=>move(-1));
+  hold(btnR,()=>move(1));
+  btnRot.addEventListener("click",rotate);
+  btnRot.addEventListener("touchstart",(e)=>{e.preventDefault();rotate();},{passive:false});
+  btnDrop.addEventListener("click",drop);
+  btnDrop.addEventListener("touchstart",(e)=>{e.preventDefault();drop();},{passive:false});
+
+  btnStart.addEventListener("click",startGame);
+  btnRetry.addEventListener("click",()=>{ elOver.classList.add("hidden"); startGame(); });
+
+  function gameOver(){
+    gameActive=false;
+    elFinal.textContent=score;
+    elControls.classList.add("hidden");
+    elOver.classList.remove("hidden");
+  }
+
+  async function boot(){
     elLoading.classList.remove("hidden");
     elTitle.classList.add("hidden");
     elOver.classList.add("hidden");
     elControls.classList.add("hidden");
-    elLoadingText.textContent = "LOADING...";
+    elLoadingText.textContent="LOADING...";
 
-    const libs = ensureLibs();
-    console.log(`[LIB] Matter=${libs.okMatter} decomp=${libs.okDecomp} ShapeExtract=${libs.okShape}`);
-
-    if (!libs.okMatter || !libs.okDecomp || !libs.okShape) {
-      elLoadingText.textContent = "LIB ERROR";
-      logDebug([
-        `[FATAL] library missing`,
-        `Matter=${libs.okMatter}`,
-        `decomp=${libs.okDecomp}`,
-        `ShapeExtract=${libs.okShape}`,
-        `→ CDNかパスを確認`
-      ]);
+    const libs=ensureLibs();
+    if(!libs.okMatter || !libs.okDecomp || !libs.okShape){
+      elLoadingText.textContent="LIB ERROR";
+      logDebug([`[FATAL] libs missing`,`Matter=${libs.okMatter}`,`decomp=${libs.okDecomp}`,`ShapeExtract=${libs.okShape}`]);
       return;
     }
-
-    await unregisterSWIfAny();
 
     createWorld();
     createGround();
 
-    // preload shapes
-    const ok = [];
-    try {
-      elLoadingText.textContent = "LOADING ASSETS...";
+    try{
+      elLoadingText.textContent="LOADING ASSETS...";
       assets = await ShapeExtract.preload({
         count: CONFIG.ASSET_COUNT,
         texPattern: CONFIG.TEX_PATTERN,
         maskPattern: CONFIG.MASK_PATTERN,
         log: ({ i, shape }) => {
-          if (shape.ok) {
-            console.log(`[ASSET OK] #${i} used=mask solid=${shape.solidRatio.toFixed(3)} verts=${shape.verts.length} crop=${shape.crop.w}x${shape.crop.h}`);
-          } else {
+          if(shape.ok){
+            console.log(`[ASSET OK] #${i} used=mask solid=${shape.solidRatio.toFixed(3)} verts=${shape.verts.length} crop=${shape.crop.w}x${shape.crop.h} comp=${shape.meta.compCount}`);
+          }else{
             console.warn(`[ASSET NG] #${i} reason=${shape.reason}`);
           }
-          ok.push(i);
-          elLoadingText.textContent = `LOADING... (${ok.length}/${CONFIG.ASSET_COUNT})`;
         }
       });
-    } catch (e) {
-      elLoadingText.textContent = "ASSET LOAD FAILED";
-      logDebug([`[FATAL] ${e.message}`, `画像パス(img/.., mask/..)を確認`]);
+    }catch(e){
+      elLoadingText.textContent="ASSET LOAD FAILED";
+      logDebug([`[FATAL] ${e.message}`,`img/ と mask/ のパスを確認`]);
       return;
     }
 
@@ -570,31 +525,26 @@
     elTitle.classList.remove("hidden");
   }
 
-  function startGame() {
-    // UI
+  function startGame(){
     elTitle.classList.add("hidden");
     elOver.classList.add("hidden");
     elControls.classList.remove("hidden");
 
-    // reset
-    clearWorldKeepRenderer();
+    clearWorld();
+    score=0; elScore.textContent=score;
 
-    score = 0;
-    elScore.textContent = score;
+    gameActive=true;
+    current=null;
+    dropping=false;
+    settleCount=0;
+    spawning=false;
 
-    gameActive = true;
-    current = null;
-    dropping = false;
-    settleCount = 0;
-
-    // camera reset
-    const { w, h } = size();
-    Render.lookAt(render, { min: { x: 0, y: 0 }, max: { x: w, y: h } });
+    const {w,h}=size();
+    Render.lookAt(render,{min:{x:0,y:0},max:{x:w,y:h}});
 
     spawnOne();
   }
 
-  // start
   boot();
 })();
 </script>
