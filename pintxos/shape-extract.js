@@ -1,17 +1,21 @@
-/* shape-extract.js
-   Use: ShapeExtract.makeBody(texturePath, x, y, { maskPath, targetSize, hitInset, shapeCfg, bodyOpts })
-   - silhouette from maskPath (PNG with hard alpha)
+/* shape-extract.js (DEBUG build)
+   - silhouette from maskPath (PNG hard alpha)
    - render sprite from texturePath
+   - attach body.__dbg and on-screen debug overlay support
 */
 
 (function () {
   const cache = new Map();
-  const clamp01 = (v) => (Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0.5);
+  const DEBUG = { enabled: true, last: null };
+
+  function setDebug(on) { DEBUG.enabled = !!on; }
+  function dbgLog(...args) { if (DEBUG.enabled) console.log(...args); }
+  function dbgWarn(...args) { if (DEBUG.enabled) console.warn(...args); }
 
   function ensureDecomp() {
     try {
-      if (window.Matter && window.decomp && window.Matter?.Common?.setDecomp) {
-        window.Matter.Common.setDecomp(window.decomp);
+      if (window.Matter && window.Matter.Common && window.Matter.Common.setDecomp) {
+        if (window.decomp) window.Matter.Common.setDecomp(window.decomp);
       }
     } catch (_) {}
   }
@@ -20,7 +24,7 @@
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.onload = () => resolve(img);
-      img.onerror = reject;
+      img.onerror = (e) => reject(new Error("Image load error: " + src));
       img.src = src;
     });
   }
@@ -34,16 +38,14 @@
     return a / 2;
   }
 
-  function dist(a, b) {
-    return Math.hypot(a.x - b.x, a.y - b.y);
-  }
+  function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 
   function resampleClosed(points, N) {
     if (!points || points.length < 3) return points;
 
+    // remove consecutive duplicates
     const ring = [];
-    for (let i = 0; i < points.length; i++) {
-      const p = points[i];
+    for (const p of points) {
       const prev = ring[ring.length - 1];
       if (!prev || prev.x !== p.x || prev.y !== p.y) ring.push(p);
     }
@@ -128,13 +130,15 @@
     if (cache.has(maskPath)) return cache.get(maskPath);
 
     const p = (async () => {
+      const info = { ok: false, reason: "", maskPath };
+
       try {
         const img = await loadImage(maskPath);
         const iw = img.naturalWidth, ih = img.naturalHeight;
-        if (!iw || !ih) return null;
+        if (!iw || !ih) { info.reason = "natural size is 0"; return info; }
 
-        const threshold = cfg.threshold ?? 5;       // マスクは硬いので低めでOK
-        const sampleScale = cfg.sampleScale ?? 0.5; // マスクは少し高解像で取ると精度上がる
+        const threshold = cfg.threshold ?? 5;         // マスクは硬いので低めでOK
+        const sampleScale = cfg.sampleScale ?? 0.5;   // 0.4〜0.7あたり推奨
         const nPoints = cfg.nPoints ?? 180;
 
         const W = Math.max(48, Math.floor(iw * sampleScale));
@@ -151,8 +155,8 @@
         try {
           imgData = ctx.getImageData(0, 0, W, H);
         } catch (e) {
-          console.warn("[ShapeExtract] getImageData failed:", maskPath);
-          return null;
+          info.reason = "getImageData failed (tainted canvas?)";
+          return info;
         }
 
         const data = imgData.data;
@@ -176,7 +180,15 @@
             }
           }
         }
-        if (solid < 80) return null;
+
+        if (solid < 80) { info.reason = "too few solid pixels (mask empty?)"; return info; }
+
+        const solidRatio = solid / (W * H);
+        // ここが超重要：マスクが“全面塗り”に近いと、輪郭抽出＝四角になりやすい
+        if (solidRatio > 0.55) {
+          dbgWarn("[ShapeExtract] Mask looks too solid (maybe you filled background by mistake).",
+                  { maskPath, solidRatio: solidRatio.toFixed(3) });
+        }
 
         const cx = sumX / solid;
         const cy = sumY / solid;
@@ -195,27 +207,37 @@
             }
           }
         }
-        if (sx === -1) return null;
+        if (sx === -1) { info.reason = "no boundary found"; return info; }
 
         const contour = traceMoore(boundary, W, H, sx, sy);
-        if (!contour || contour.length < 40) return null;
+        if (!contour || contour.length < 40) { info.reason = "contour too short"; return info; }
 
         let pts = contour.map(p => ({ x: (p.x - cx) * inv, y: (p.y - cy) * inv }));
         pts = resampleClosed(pts, nPoints);
-        if (!pts || pts.length < 20) return null;
+        if (!pts || pts.length < 20) { info.reason = "resample failed"; return info; }
 
         if (polygonArea(pts) > 0) pts.reverse(); // clockwise
 
         const bw = Math.max(1, (maxX - minX + 1) * inv);
         const bh = Math.max(1, (maxY - minY + 1) * inv);
 
-        const xOffset = clamp01((cx * inv) / iw);
-        const yOffset = clamp01((cy * inv) / ih);
+        const xOffset = Math.max(0, Math.min(1, (cx * inv) / iw));
+        const yOffset = Math.max(0, Math.min(1, (cy * inv) / ih));
 
-        return { pts, iw, ih, bw, bh, xOffset, yOffset };
+        info.ok = true;
+        info.pts = pts;
+        info.iw = iw; info.ih = ih;
+        info.bw = bw; info.bh = bh;
+        info.xOffset = xOffset; info.yOffset = yOffset;
+        info.solidRatio = solidRatio;
+        info.nPoints = pts.length;
+
+        DEBUG.last = info;
+        return info;
       } catch (e) {
-        console.warn("[ShapeExtract] extract failed:", maskPath, e);
-        return null;
+        info.reason = e.message || String(e);
+        dbgWarn("[ShapeExtract] extract failed:", info);
+        return info;
       }
     })();
 
@@ -228,26 +250,37 @@
     if (!Matter) throw new Error("Matter.js not loaded");
 
     ensureDecomp();
+    const hasDecomp = !!window.decomp;
 
     const maskPath = opt.maskPath ?? texturePath;
     const packed = await extract(maskPath, opt.shapeCfg ?? {});
 
-    // fallback
+    // fallback polygon (not a rectangle) — but we still mark fallback
     const fb = {
+      ok: false,
+      reason: packed?.reason || "fallback",
       pts: [
-        { x: -60, y: -35 }, { x: 60, y: -35 }, { x: 80, y: 0 },
-        { x: 60, y: 35 }, { x: -60, y: 35 }, { x: -80, y: 0 }
+        { x: -60, y: -30 }, { x: 60, y: -30 }, { x: 85, y: 0 },
+        { x: 60, y: 30 }, { x: -60, y: 30 }, { x: -85, y: 0 }
       ],
-      iw: 160, ih: 90,
-      bw: 160, bh: 90,
-      xOffset: 0.5, yOffset: 0.5
+      iw: 200, ih: 120,
+      bw: 200, bh: 120,
+      xOffset: 0.5, yOffset: 0.5,
+      solidRatio: null,
+      nPoints: 6
     };
 
-    const use = packed ?? fb;
-    if (!packed) console.warn("[ShapeExtract] FALLBACK used:", maskPath);
+    const use = (packed && packed.ok) ? packed : fb;
+    const usedFallback = !(packed && packed.ok);
 
-    const targetSize = opt.targetSize ?? 125;
-    const hitInset = opt.hitInset ?? 0.97; // マスクなら 0.95〜0.99 で調整
+    if (usedFallback) {
+      dbgWarn("[ShapeExtract] FALLBACK used -> likely rectangle-like stacking.",
+              { maskPath, reason: packed?.reason || "unknown", hasDecomp });
+    }
+
+    const targetSize = opt.targetSize ?? 140;
+    const hitInset = opt.hitInset ?? 0.97;
+
     const spriteScale = targetSize / Math.max(use.bw, use.bh);
 
     const bodyOpts = Object.assign({
@@ -260,10 +293,15 @@
     try {
       body = Matter.Bodies.fromVertices(x, y, [use.pts], bodyOpts, true);
     } catch (e) {
-      console.warn("[ShapeExtract] fromVertices failed:", e);
+      dbgWarn("[ShapeExtract] fromVertices threw:", e);
       body = null;
     }
-    if (!body) body = Matter.Bodies.rectangle(x, y, targetSize, targetSize, bodyOpts);
+
+    if (!body) {
+      // last resort rectangle
+      body = Matter.Bodies.rectangle(x, y, targetSize, targetSize, bodyOpts);
+      body.__dbg_forceRect = true;
+    }
 
     Matter.Body.scale(body, spriteScale * hitInset, spriteScale * hitInset);
 
@@ -272,12 +310,30 @@
       texture: texturePath,
       xScale: spriteScale,
       yScale: spriteScale,
-      xOffset: use.xOffset,
-      yOffset: use.yOffset
+      // NOTE: このoffsetがズレると「絵だけ浮いて見える」ので、デバッグで必ず検証する
+      xOffset: use.xOffset ?? 0.5,
+      yOffset: use.yOffset ?? 0.5
+    };
+
+    body.__dbg = {
+      texturePath,
+      maskPath,
+      usedFallback,
+      reason: packed?.ok ? "" : (packed?.reason || "unknown"),
+      hasDecomp,
+      vertexCount: body.vertices?.length ?? 0,
+      partsCount: body.parts?.length ?? 0,
+      spriteScale,
+      hitInset,
+      xOffset: body.render.sprite.xOffset,
+      yOffset: body.render.sprite.yOffset,
+      bw: use.bw, bh: use.bh,
+      solidRatio: use.solidRatio,
+      forcedRect: !!body.__dbg_forceRect
     };
 
     return body;
   }
 
-  window.ShapeExtract = { extract, makeBody };
+  window.ShapeExtract = { extract, makeBody, setDebug, _debugLast: () => DEBUG.last };
 })();
