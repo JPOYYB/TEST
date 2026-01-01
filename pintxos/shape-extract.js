@@ -1,10 +1,7 @@
-/* shape-extract.js (SAFE)
-   - Alpha contour extraction with robust fallbacks
-   - Never breaks game even if getImageData() fails (CORS / SecurityError)
-   - Fix "floating sprite" by aligning sprite origin to alpha centroid (xOffset/yOffset)
-   Public:
-     window.ShapeExtract.extract(imgPath, cfg)
-     window.ShapeExtract.makeBody(imgPath, x, y, opt)
+/* shape-extract.js (ULTRA SAFE)
+   - Never stops the game: always returns a Matter body
+   - Handles: decomp missing, fromVertices errors, getImageData SecurityError, image load errors
+   - Fix sprite "floating" by aligning sprite origin to alpha centroid (xOffset/yOffset)
 */
 
 (function () {
@@ -15,8 +12,7 @@
   function loadImage(src) {
     return new Promise((resolve, reject) => {
       const img = new Image();
-      // CORS OKならこれで getImageData が通る（ダメでも後段で落とさない）
-      img.crossOrigin = "anonymous";
+      // ★ crossOrigin は付けない：CORSヘッダ無い環境だと画像ロード自体が死ぬことがある
       img.onload = () => resolve(img);
       img.onerror = reject;
       img.src = src;
@@ -32,14 +28,14 @@
     return a / 2;
   }
 
-  // Moore neighbor tracing on boundary pixels (8-connected)
+  // Moore neighbor tracing (8-connected)
   function traceMoore(boundary, W, H, sx, sy) {
     const dirs = [
       { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }, { x: -1, y: 1 },
       { x: -1, y: 0 }, { x: -1, y: -1 }, { x: 0, y: -1 }, { x: 1, y: -1 }
     ];
     let x = sx, y = sy;
-    let bx = sx - 1, by = sy; // backtrack
+    let bx = sx - 1, by = sy;
     const startX = x, startY = y;
     const out = [];
 
@@ -83,11 +79,10 @@
     return Math.hypot(a.x - b.x, a.y - b.y);
   }
 
-  // closed polyline resampling to fixed N points (stable)
+  // resample closed curve to fixed N points (stable)
   function resampleClosed(points, N) {
     if (!points || points.length < 3) return points;
 
-    // remove consecutive duplicates
     const ring = [];
     for (let i = 0; i < points.length; i++) {
       const p = points[i];
@@ -134,7 +129,7 @@
         const iw = img.naturalWidth, ih = img.naturalHeight;
         if (!iw || !ih) return null;
 
-        const threshold = cfg.threshold ?? 20;
+        const threshold = cfg.threshold ?? 18;     // ★薄い下端が欠けるなら 12〜18 に
         const sampleScale = cfg.sampleScale ?? 0.35;
         const nPoints = cfg.nPoints ?? 160;
 
@@ -152,15 +147,14 @@
         try {
           imgData = ctx.getImageData(0, 0, W, H);
         } catch (e) {
-          // CORS/SecurityError: ここで落とすとゲームが死ぬので null を返してフォールバックへ
-          console.warn("[ShapeExtract] getImageData failed (CORS?) -> fallback:", imgPath, e);
+          // CORSなどで taint -> ここは諦めてフォールバック
+          console.warn("[ShapeExtract] getImageData failed -> fallback shape:", imgPath);
           return null;
         }
 
         const data = imgData.data;
         const mask = new Uint8Array(W * H);
 
-        // alpha centroid in downsample coords
         let solid = 0, sumX = 0, sumY = 0;
         for (let y = 0; y < H; y++) {
           for (let x = 0; x < W; x++) {
@@ -179,9 +173,9 @@
         const cx = sumX / solid;
         const cy = sumY / solid;
 
-        // boundary map + start point
         const boundary = new Uint8Array(W * H);
         let sx = -1, sy = -1;
+
         for (let y = 1; y < H - 1; y++) {
           for (let x = 1; x < W - 1; x++) {
             const idx = y * W + x;
@@ -201,8 +195,7 @@
         pts = resampleClosed(pts, nPoints);
         if (!pts || pts.length < 10) return null;
 
-        // ensure clockwise
-        if (polygonArea(pts) > 0) pts.reverse();
+        if (polygonArea(pts) > 0) pts.reverse(); // clockwise
 
         // sprite origin aligned to alpha centroid
         const cxOrig = cx * inv;
@@ -212,7 +205,7 @@
 
         return { pts, iw, ih, xOffset, yOffset };
       } catch (e) {
-        console.warn("[ShapeExtract] extract failed -> fallback:", imgPath, e);
+        console.warn("[ShapeExtract] extract failed -> fallback shape:", imgPath, e);
         return null;
       }
     })();
@@ -221,9 +214,20 @@
     return p;
   }
 
+  function ensureDecomp() {
+    // fromVerticesで必要（concave対応）
+    try {
+      if (window.Matter && window.decomp && window.Matter.Common && window.Matter.Common.setDecomp) {
+        window.Matter.Common.setDecomp(window.decomp);
+      }
+    } catch (_) {}
+  }
+
   async function makeBody(imgPath, x, y, opt = {}) {
     const Matter = window.Matter;
     if (!Matter) throw new Error("Matter.js not loaded");
+
+    ensureDecomp();
 
     const fallback = {
       pts: [
@@ -239,7 +243,7 @@
     let packed = null;
     try {
       packed = await extract(imgPath, opt.shapeCfg ?? {});
-    } catch (e) {
+    } catch (_) {
       packed = null;
     }
 
@@ -255,12 +259,27 @@
       friction: 0.8
     }, opt.bodyOpts || {});
 
-    let body = Matter.Bodies.fromVertices(x, y, [pts], bodyOpts, true);
+    let body = null;
+
+    // ★ここが重要：fromVerticesが例外を投げても必ず fallback に行く
+    try {
+      body = Matter.Bodies.fromVertices(x, y, [pts], bodyOpts, true);
+    } catch (e) {
+      console.warn("[ShapeExtract] fromVertices failed -> rectangle fallback:", imgPath, e);
+      body = null;
+    }
+
     if (!body) body = Matter.Bodies.rectangle(x, y, targetSize, targetSize, bodyOpts);
 
     Matter.Body.scale(body, spriteScale * hitInset, spriteScale * hitInset);
 
+    // 画像が読めない時でも“見える”ように塗りを残す
     body.render = body.render || {};
+    body.render.fillStyle = "#bdbdbd";
+    body.render.strokeStyle = "#888";
+    body.render.lineWidth = 1;
+
+    // sprite (成功したら画像表示)
     body.render.sprite = {
       texture: imgPath,
       xScale: spriteScale,
@@ -268,6 +287,17 @@
       xOffset: clamp01(xOffset),
       yOffset: clamp01(yOffset)
     };
+
+    // 画像がロード失敗する環境なら sprite を捨てて灰色形状で表示
+    try {
+      const t = new Image();
+      t.onload = () => {}; // OK
+      t.onerror = () => {
+        // sprite消すと fillStyle が描かれる
+        if (body.render && body.render.sprite) delete body.render.sprite;
+      };
+      t.src = imgPath;
+    } catch (_) {}
 
     return body;
   }
