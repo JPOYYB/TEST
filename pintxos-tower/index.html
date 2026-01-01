@@ -3,39 +3,35 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Pintxos Tower</title>
+    <title>Pintxos Tower (Text ver)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background-color: #f0f0f0; font-family: sans-serif; touch-action: none; }
         
-        /* キャンバス */
+        /* ゲーム画面 */
         canvas { display: block; position: fixed; top: 0; left: 0; z-index: 0; }
 
-        /* UI */
+        /* UIレイヤー */
         #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
         #score-board { position: absolute; top: 20px; left: 20px; font-size: 24px; font-weight: bold; color: #333; text-shadow: 2px 2px 0px white; }
 
-        /* ボタン */
+        /* 操作ボタン */
         #controls { position: absolute; bottom: 30px; left: 0; width: 100%; height: 90px; display: flex; justify-content: center; align-items: center; gap: 20px; pointer-events: auto; }
-        .control-btn { width: 60px; height: 60px; background: rgba(255,255,255,0.9); border: 2px solid #888; border-radius: 50%; font-size: 24px; cursor: pointer; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 5px rgba(0,0,0,0.2); user-select: none; }
+        .control-btn { width: 60px; height: 60px; background: rgba(255,255,255,0.9); border: 2px solid #888; border-radius: 50%; font-size: 24px; cursor: pointer; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 5px rgba(0,0,0,0.2); user-select: none; -webkit-user-select: none; }
         .control-btn:active { background: #ccc; transform: translateY(2px); }
         #btn-drop { width: 80px; height: 80px; background: #ff4757; color: white; border: none; font-size: 32px; }
 
-        /* 画面 */
+        /* 画面オーバーレイ */
         .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.95); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 20; pointer-events: auto; }
         .hidden { display: none !important; }
+        
         button.primary-btn { padding: 15px 40px; font-size: 18px; background: #2ecc71; color: white; border: none; border-radius: 30px; margin-top: 15px; cursor: pointer; }
         
         #ranking-list { padding: 0; list-style: none; margin-top:10px; }
         #ranking-list li { margin: 5px 0; border-bottom: 1px solid #ddd; padding: 5px; width: 220px; display:flex; justify-content:space-between; }
-        
-        /* 画像エラー時のメッセージ表示用 */
-        #error-msg { position: absolute; top: 60px; left: 20px; color: red; font-size: 12px; background: rgba(255,255,255,0.8); padding: 5px; display: none; z-index: 100; pointer-events: none; }
     </style>
 </head>
 <body>
-
-    <div id="error-msg"></div>
 
     <div id="ui-layer">
         <div id="score-board">SCORE: <span id="score-val">0</span></div>
@@ -49,7 +45,7 @@
 
     <div id="title-screen" class="overlay">
         <h1>Pintxos Tower</h1>
-        <p>ピンチョスを積み上げろ！</p>
+        <p>食材(文字)を積み上げろ！</p>
         <button class="primary-btn" onclick="startGame()">START</button>
     </div>
 
@@ -71,7 +67,13 @@
     </div>
 
 <script>
-    const Engine = Matter.Engine, Render = Matter.Render, Runner = Matter.Runner, Bodies = Matter.Bodies, Composite = Matter.Composite, Events = Matter.Events, Body = Matter.Body;
+    const Engine = Matter.Engine,
+          Render = Matter.Render,
+          Runner = Matter.Runner,
+          Bodies = Matter.Bodies,
+          Composite = Matter.Composite,
+          Events = Matter.Events,
+          Body = Matter.Body;
 
     let engine, render, runner;
     let ground;
@@ -80,39 +82,13 @@
     let gameActive = false;
     let score = 0;
     
-    // 画像リスト
-    const IMAGES = [];
-    for(let i=1; i<=11; i++) IMAGES.push(`./img/${i}.png`);
-
-    // 画像の読み込みチェック用フラグ
-    const imageStatus = {}; // { "path": true/false }
+    // 画像の代わりに「文字（絵文字）」リストを使用
+    const FOOD_EMOJIS = ["🥓", "🧀", "🍤", "🥒", "🍅", "🍖", "🥖", "🥔", "🥚", "🍄", "🥑"];
 
     let w = window.innerWidth;
     let h = window.innerHeight;
 
-    window.onload = function() { 
-        preloadImages(); // 画像チェック開始
-        init(); 
-    };
-
-    // 画像が本当に存在するかチェックする
-    function preloadImages() {
-        IMAGES.forEach(path => {
-            const img = new Image();
-            img.src = path;
-            img.onload = () => { imageStatus[path] = true; };
-            img.onerror = () => { 
-                imageStatus[path] = false; 
-                showError(`画像読み込み失敗: ${path}`);
-            };
-        });
-    }
-
-    function showError(msg) {
-        const el = document.getElementById('error-msg');
-        el.style.display = 'block';
-        el.innerHTML += msg + "<br>";
-    }
+    window.onload = function() { init(); };
 
     function init() {
         engine = Engine.create();
@@ -124,9 +100,35 @@
                 width: w,
                 height: h,
                 background: '#f0f0f0',
-                wireframes: false, // 画像モード
+                wireframes: false, // 図形を塗りつぶす
                 pixelRatio: 1
             }
+        });
+
+        // カスタム描画：Matter.jsの標準描画の「後」に文字を書き込む
+        Events.on(render, 'afterRender', function() {
+            const context = render.context;
+            context.font = "50px serif"; // 文字サイズ
+            context.textAlign = "center";
+            context.textBaseline = "middle";
+
+            const bodies = Composite.allBodies(engine.world);
+            
+            bodies.forEach(body => {
+                // 'labelContent' という独自プロパティを持っていたら描画する
+                if (body.labelContent) {
+                    context.save();
+                    // 物体の位置と角度に合わせて座標を変換
+                    context.translate(body.position.x, body.position.y);
+                    context.rotate(body.angle);
+                    // 文字を描く（影付き）
+                    context.fillStyle = "rgba(0,0,0,0.2)";
+                    context.fillText(body.labelContent, 2, 4); // 影
+                    context.fillStyle = "#000"; 
+                    context.fillText(body.labelContent, 0, 0); // 本体
+                    context.restore();
+                }
+            });
         });
 
         createGround();
@@ -145,7 +147,6 @@
     function createGround() {
         if(ground) Composite.remove(engine.world, ground);
         const groundY = h - 30; 
-        // 地面作成
         ground = Bodies.rectangle(w/2, groundY, w, 60, { 
             isStatic: true,
             label: 'Ground',
@@ -178,40 +179,26 @@
     function spawnPintxo() {
         if (!gameActive) return;
 
-        const imgIndex = Math.floor(Math.random() * IMAGES.length);
-        const imgPath = IMAGES[imgIndex];
+        // ランダムに食材（文字）を選ぶ
+        const emoji = FOOD_EMOJIS[Math.floor(Math.random() * FOOD_EMOJIS.length)];
         
-        // 出現位置
         const spawnY = render.bounds.min.y + 100;
         const spawnX = w / 2;
 
-        // ★修正点: 四角形 (Rectangle) に変更
-        // 幅80px, 高さ80px (画像の余白を考慮して少し小さめにするのがコツですが、今回は四角なので合わせます)
-        
-        const isImageLoaded = imageStatus[imgPath];
-        
-        const renderOptions = {};
-        
-        if (isImageLoaded) {
-            // 画像が読み込めている場合
-            renderOptions.sprite = {
-                texture: imgPath,
-                xScale: 0.8, // 100px画像を80pxに縮小
-                yScale: 0.8
-            };
-        } else {
-            // 画像がない場合（代替表示：赤い枠線の白い四角）
-            renderOptions.fillStyle = '#ffffff';
-            renderOptions.strokeStyle = '#ff0000'; // 赤い枠線
-            renderOptions.lineWidth = 5;
-        }
-
-        currentPintxo = Bodies.rectangle(spawnX, spawnY, 80, 80, { // Rectangleに変更
+        // 四角い物体を作成（白い豆腐のようなブロック）
+        currentPintxo = Bodies.rectangle(spawnX, spawnY, 70, 70, { 
             label: 'Pintxo',
             restitution: 0.1,
             friction: 0.5,
-            render: renderOptions
+            render: {
+                fillStyle: '#ffffff', // 白い背景
+                strokeStyle: '#333333', // 黒い枠線
+                lineWidth: 2
+            }
         });
+        
+        // ★重要：物体に「何の文字を表示するか」を記憶させる
+        currentPintxo.labelContent = emoji;
 
         Body.setStatic(currentPintxo, true);
         currentPintxo.isDropped = false;
@@ -238,7 +225,8 @@
 
         let targetTopY = 0;
         if (hasStack) {
-            targetTopY = highestY - (h * 0.5); // 画面中央くらいに最高点が来るように
+            // 最高点から少し余裕を持たせる
+            targetTopY = highestY - (h * 0.5); 
         }
 
         if (targetTopY > 0) targetTopY = 0; // 地面より下には行かない
@@ -324,6 +312,7 @@
     }
     window.resetGame = function() { startGame(); };
 
+    // ボタン設定
     const btnL = document.getElementById('btn-left');
     const btnR = document.getElementById('btn-right');
     const btnRot = document.getElementById('btn-rotate');
