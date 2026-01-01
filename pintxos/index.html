@@ -1,67 +1,42 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>タワーバトル</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+  <title>タワーバトル（Debug）</title>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/poly-decomp@0.3.0/build/decomp.min.js"></script>
   <script src="./shape-extract.js"></script>
+
   <style>
-    body { margin:0; padding:0; overflow:hidden; background:#f3f3f3; font-family: system-ui, -apple-system, sans-serif; touch-action:none; }
-    canvas { display:block; position:fixed; inset:0; z-index:0; }
-    #ui { position:absolute; inset:0; z-index:10; pointer-events:none; }
-    #score { position:absolute; top:18px; left:18px; font-weight:900; font-size:44px; color:#222; text-shadow:2px 2px 0 #fff; }
-    #controls { position:absolute; left:0; right:0; bottom:28px; height:110px; display:flex; justify-content:center; align-items:center; gap:22px; pointer-events:auto; }
-    .btn {
-      width:86px; height:86px; border-radius:50%;
-      background:rgba(255,255,255,.95);
-      border:4px solid rgba(0,0,0,.25);
-      box-shadow:0 10px 18px rgba(0,0,0,.18);
-      font-size:34px; display:flex; justify-content:center; align-items:center;
-      user-select:none; -webkit-user-select:none;
-    }
-    .btn:active { transform:translateY(2px); filter:brightness(.95); }
-    #drop { width:110px; height:110px; background:#ff4d5a; color:#fff; border:none; border-radius:50%; font-size:40px; }
-    .overlay { position:absolute; inset:0; background:rgba(255,255,255,.96); display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:20; pointer-events:auto; }
-    .hidden { display:none !important; }
-    .primary { padding:14px 34px; font-size:18px; border:none; border-radius:999px; background:#2ecc71; color:#fff; margin-top:14px; }
-    #ranking { list-style:none; padding:0; margin:10px 0 0 0; width:260px; }
-    #ranking li { display:flex; justify-content:space-between; padding:8px 6px; border-bottom:1px solid #ddd; }
-    input { padding:10px; font-size:16px; text-align:center; }
+    body{margin:0;overflow:hidden;background:#f3f3f3;font-family:system-ui,-apple-system,sans-serif;touch-action:none}
+    canvas{position:fixed;inset:0}
+    #ui{position:absolute;inset:0;pointer-events:none}
+    #score{position:absolute;top:18px;left:18px;font-weight:900;font-size:44px;color:#222;text-shadow:2px 2px 0 #fff}
+    #controls{position:absolute;left:0;right:0;bottom:28px;height:110px;display:flex;justify-content:center;align-items:center;gap:22px;pointer-events:auto}
+    .btn{width:86px;height:86px;border-radius:50%;background:rgba(255,255,255,.95);border:4px solid rgba(0,0,0,.25);
+      box-shadow:0 10px 18px rgba(0,0,0,.18);font-size:34px;display:flex;justify-content:center;align-items:center;user-select:none}
+    .btn:active{transform:translateY(2px);filter:brightness(.95)}
+    #drop{width:110px;height:110px;border-radius:50%;background:#ff4d5a;color:#fff;border:none;font-size:40px}
+    #dbgBtn{position:absolute;top:16px;right:16px;z-index:30;pointer-events:auto;background:#111;color:#fff;border:none;border-radius:999px;
+      padding:10px 14px;font-size:16px;opacity:.85}
+    #dbgPanel{position:absolute;top:62px;right:16px;z-index:30;pointer-events:none;background:rgba(0,0,0,.72);color:#fff;
+      padding:10px 12px;border-radius:12px;font-size:12px;max-width:280px;line-height:1.35}
+    .hidden{display:none!important}
   </style>
 </head>
 <body>
   <div id="ui">
     <div id="score">SCORE: <span id="sv">0</span></div>
-    <div id="controls" class="hidden">
+    <button id="dbgBtn">🐞 DEBUG</button>
+    <div id="dbgPanel" class="hidden"></div>
+
+    <div id="controls">
       <div class="btn" id="L">⬅️</div>
-      <div class="btn" id="R0">🔄</div>
+      <div class="btn" id="Rot">🔄</div>
       <div class="btn" id="R">➡️</div>
       <button id="drop">⬇️</button>
-    </div>
-  </div>
-
-  <div id="title" class="overlay">
-    <h1 style="margin:0 0 8px 0;">タワーバトル</h1>
-    <div style="opacity:.75; margin-bottom:12px;">ピンチョスを積め。落としたら負け。</div>
-    <button class="primary" id="start">START</button>
-  </div>
-
-  <div id="over" class="overlay hidden">
-    <h1 style="margin:0 0 6px 0;">GAME OVER</h1>
-    <div style="margin-bottom:10px;">Score: <span id="fs">0</span></div>
-
-    <div id="inputArea">
-      <input id="name" maxlength="8" placeholder="名前" />
-      <div><button class="primary" id="save">ランキング登録</button></div>
-      <button style="margin-top:14px; background:none; border:none; text-decoration:underline; color:#666;" id="retry">リトライ</button>
-    </div>
-
-    <div id="rankArea" class="hidden">
-      <h3 style="margin:0 0 6px 0;">ランキング</h3>
-      <ul id="ranking"></ul>
-      <button class="primary" id="again">もう一度</button>
     </div>
   </div>
 
@@ -70,44 +45,46 @@
   const Engine = Matter.Engine, Render = Matter.Render, Runner = Matter.Runner;
   const Bodies = Matter.Bodies, Composite = Matter.Composite, Events = Matter.Events, Body = Matter.Body;
 
-  // ===== 設定（ここだけ触れば調整できる） =====
+  // ===== 設定 =====
   const CFG = {
     count: 11,
     texDir: "./img/",
     maskDir: "./mask/",
-    targetSize: 150,         // 見た目サイズ基準
-    hitInset: 0.97,          // 隙間を詰めるなら 0.95〜0.99
-    shape: { threshold: 5, sampleScale: 0.5, nPoints: 180 }, // マスク向け
-    ground: { yPad: 190, wRatio: 0.32, h: 22 },
+    targetSize: 150,
+    hitInset: 0.97,                 // 詰めたいなら 0.95〜0.99
+    shape: { threshold: 5, sampleScale: 0.6, nPoints: 180 },  // デバッグ用にやや高精度
+    ground: { yPad: 190, wRatio: 0.38, h: 22 },
     moveStep: 7,
     rotateStep: Math.PI / 6,
-    deadPad: 1.35,           // 画面下に落ちたら負けのライン倍率
-    settleMaxMs: 2200,       // 落下後の待ち時間上限
+    deadPad: 1.35,
+    settleMaxMs: 2200
   };
 
   const IMAGES = Array.from({length: CFG.count}, (_,i)=> `${CFG.texDir}${i+1}.png`);
   const MASKS  = Array.from({length: CFG.count}, (_,i)=> `${CFG.maskDir}${i+1}.png`);
 
-  // ===== 状態 =====
   let engine, render, runner;
   let w = innerWidth, h = innerHeight;
   let ground = null;
   let current = null;
   let isDropping = false;
-  let active = false;
+  let active = true;
   let score = 0;
 
-  // ===== UI =====
-  const el = (id)=>document.getElementById(id);
-  const sv = el("sv"), fs = el("fs");
-  const title = el("title"), over = el("over");
-  const controls = el("controls");
-  const inputArea = el("inputArea"), rankArea = el("rankArea");
+  // debug
+  let debugOn = true;
+  const dbgBtn = document.getElementById("dbgBtn");
+  const dbgPanel = document.getElementById("dbgPanel");
+  dbgBtn.addEventListener("click", () => {
+    debugOn = !debugOn;
+    dbgPanel.classList.toggle("hidden", !debugOn);
+    ShapeExtract.setDebug(debugOn);
+  });
+  dbgPanel.classList.toggle("hidden", !debugOn);
 
-  // ===== 初期化 =====
   window.addEventListener("load", init);
+
   function init() {
-    // decompセット（fromVertices安定化）
     try { Matter.Common.setDecomp(decomp); } catch (_) {}
 
     engine = Engine.create();
@@ -122,19 +99,15 @@
 
     createGround();
     Events.on(engine, "beforeUpdate", tick);
+    Events.on(render, "afterRender", drawDebug);
 
     window.addEventListener("resize", () => {
       w = innerWidth; h = innerHeight;
       render.canvas.width = w; render.canvas.height = h;
     });
 
-    // buttons
-    el("start").onclick = start;
-    el("retry").onclick = start;
-    el("again").onclick = start;
-    el("save").onclick = saveScore;
-
     bindControls();
+    spawn(); // 開始時に1個出す
   }
 
   function createGround() {
@@ -142,43 +115,12 @@
     const gy = h - CFG.ground.yPad;
     const gw = w * CFG.ground.wRatio;
     ground = Bodies.rectangle(w/2, gy, gw, CFG.ground.h, {
-      isStatic:true, label:"Ground",
-      friction: 1.0,
-      render: { fillStyle:"#8b4513" }
+      isStatic:true, label:"Ground", friction:1.0, render:{fillStyle:"#8b4513"}
     });
     Composite.add(engine.world, ground);
   }
 
-  function resetWorld() {
-    Composite.clear(engine.world, false);
-    Engine.clear(engine);
-    createGround();
-    Render.lookAt(render, { min:{x:0,y:0}, max:{x:w,y:h} });
-  }
-
-  async function start() {
-    title.classList.add("hidden");
-    over.classList.add("hidden");
-    controls.classList.remove("hidden");
-    inputArea.classList.remove("hidden");
-    rankArea.classList.add("hidden");
-
-    w = innerWidth; h = innerHeight;
-    render.canvas.width = w; render.canvas.height = h;
-
-    resetWorld();
-
-    score = 0; sv.textContent = score;
-    active = true;
-    isDropping = false;
-    current = null;
-
-    await spawn();
-  }
-
   async function spawn() {
-    if (!active) return;
-
     const idx = Math.floor(Math.random() * IMAGES.length);
     const tex = IMAGES[idx];
     const mask = MASKS[idx];
@@ -186,33 +128,42 @@
     const x = w/2;
     const y = render.bounds.min.y + 120;
 
-    let body;
-    try {
-      body = await ShapeExtract.makeBody(tex, x, y, {
-        maskPath: mask,
-        targetSize: CFG.targetSize,
-        hitInset: CFG.hitInset,
-        shapeCfg: CFG.shape,
-        bodyOpts: { label:"Pintxo" }
-      });
-    } catch (e) {
-      console.warn("spawn failed -> rectangle fallback", e);
-      body = Bodies.rectangle(x, y, CFG.targetSize, CFG.targetSize, { label:"Pintxo" });
-    }
+    let body = await ShapeExtract.makeBody(tex, x, y, {
+      maskPath: mask,
+      targetSize: CFG.targetSize,
+      hitInset: CFG.hitInset,
+      shapeCfg: CFG.shape,
+      bodyOpts: { label:"Pintxo" }
+    });
 
     Body.setStatic(body, true);
     body.isDropped = false;
     current = body;
     Composite.add(engine.world, body);
     isDropping = false;
+
+    if (debugOn) {
+      const d = body.__dbg || {};
+      dbgPanel.innerHTML =
+        `<b>Spawn</b><br>` +
+        `tex: ${short(tex)}<br>` +
+        `mask: ${short(mask)}<br>` +
+        `fallback: <b style="color:${d.usedFallback ? '#ff6666' : '#7CFF7C'}">${d.usedFallback}</b><br>` +
+        `reason: ${escapeHtml(d.reason || "-")}<br>` +
+        `verts: ${d.vertexCount} parts:${d.partsCount}<br>` +
+        `solidRatio: ${d.solidRatio != null ? d.solidRatio.toFixed(3) : "-"}<br>` +
+        `spriteScale: ${d.spriteScale?.toFixed(3)} hitInset:${d.hitInset}<br>` +
+        `offset: (${(d.xOffset??0).toFixed(3)}, ${(d.yOffset??0).toFixed(3)})<br>` +
+        `hasDecomp: ${d.hasDecomp}`;
+      console.log("[DBG spawn]", d);
+    }
   }
 
-  function move(dir) {
-    if (current && !isDropping) Body.translate(current, { x: dir * CFG.moveStep, y: 0 });
-  }
-  function rotate() {
-    if (current && !isDropping) Body.rotate(current, CFG.rotateStep);
-  }
+  function short(p){ return String(p).split("/").slice(-2).join("/"); }
+  function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));}
+
+  function move(dir) { if (current && !isDropping) Body.translate(current, { x: dir * CFG.moveStep, y: 0 }); }
+  function rotate() { if (current && !isDropping) Body.rotate(current, CFG.rotateStep); }
 
   async function drop() {
     if (!current || isDropping) return;
@@ -222,11 +173,10 @@
     current.isDropped = true;
 
     const dropped = current;
-
-    // 落下が落ち着くまで待ってからスコア＆次スポーン
     await waitForSettle(dropped, CFG.settleMaxMs);
 
     if (!active) return;
+
     addScore(dropped);
     await spawn();
   }
@@ -235,18 +185,13 @@
     return new Promise((resolve) => {
       const t0 = performance.now();
       let stable = 0;
-
       const check = () => {
-        if (!active) return resolve();
         const now = performance.now();
         const v = body.speed || 0;
         const av = Math.abs(body.angularVelocity || 0);
-
-        if (v < 0.12 && av < 0.12) stable++;
-        else stable = 0;
-
-        if (stable >= 18) return resolve(); // 18フレーム安定
-        if (now - t0 > maxMs) return resolve(); // 上限
+        if (v < 0.12 && av < 0.12) stable++; else stable = 0;
+        if (stable >= 18) return resolve();
+        if (now - t0 > maxMs) return resolve();
         requestAnimationFrame(check);
       };
       requestAnimationFrame(check);
@@ -254,105 +199,95 @@
   }
 
   function addScore(body) {
-    // 上端基準（見た目に近い）
     const diff = ground.position.y - body.bounds.min.y;
     if (diff > 0) {
       score += (Math.floor(diff / 10) + 10);
-      sv.textContent = score;
+      document.getElementById("sv").textContent = score;
     }
   }
 
   function tick() {
     if (!active) return;
 
-    // 落下ミス判定：地面より一定以上下に行ったら終了
     const deadY = ground.position.y + (h * CFG.deadPad);
-
     const bodies = Composite.allBodies(engine.world);
+
     for (const b of bodies) {
       if (b.label === "Pintxo" && b.isDropped) {
         if (b.position.y > deadY) {
-          gameOver();
+          // game over
+          active = false;
+          alert("GAME OVER");
           return;
         }
       }
     }
+  }
 
-    // カメラ：最上段に追従（積み上げ時のみ）
-    let top = ground.position.y;
-    let has = false;
+  function drawDebug() {
+    if (!debugOn) return;
+
+    const ctx = render.context;
+    const bodies = Composite.allBodies(engine.world);
+
+    ctx.save();
+    ctx.lineWidth = 2;
+
     for (const b of bodies) {
-      if (b.label === "Pintxo" && b !== current) {
-        if (b.bounds.min.y < top) { top = b.bounds.min.y; has = true; }
+      if (b.label !== "Pintxo") continue;
+
+      const d = b.__dbg || {};
+      const verts = b.vertices || [];
+      if (verts.length) {
+        ctx.beginPath();
+        ctx.moveTo(verts[0].x, verts[0].y);
+        for (let i = 1; i < verts.length; i++) ctx.lineTo(verts[i].x, verts[i].y);
+        ctx.closePath();
+
+        // fallback or forcedRect -> red, normal poly -> green
+        ctx.strokeStyle = (d.usedFallback || d.forcedRect) ? "rgba(255,60,60,0.95)" : "rgba(50,255,80,0.95)";
+        ctx.stroke();
       }
+
+      // AABB bounds (gray)
+      const min = b.bounds.min, max = b.bounds.max;
+      ctx.strokeStyle = "rgba(0,0,0,0.18)";
+      ctx.strokeRect(min.x, min.y, max.x - min.x, max.y - min.y);
+
+      // label
+      ctx.fillStyle = "rgba(0,0,0,0.65)";
+      ctx.font = "12px sans-serif";
+      const tag = (d.usedFallback || d.forcedRect) ? `RECT/FALLBACK v=${d.vertexCount}` : `POLY v=${d.vertexCount}`;
+      ctx.fillText(tag, b.position.x + 6, b.position.y - 6);
     }
-    if (has) {
-      const targetTop = Math.min(0, top - h * 0.55);
-      const curTop = render.bounds.min.y;
-      const newTop = curTop + (targetTop - curTop) * 0.06;
-      Render.lookAt(render, { min:{x:0,y:newTop}, max:{x:w,y:newTop+h} });
-    } else if (render.bounds.min.y < 0) {
-      Render.lookAt(render, { min:{x:0,y:0}, max:{x:w,y:h} });
-    }
-  }
 
-  function gameOver() {
-    active = false;
-    controls.classList.add("hidden");
-    over.classList.remove("hidden");
-    fs.textContent = score;
-  }
-
-  function saveScore() {
-    const name = (el("name").value || "名無し").slice(0,8);
-    const key = "towerbattle_rank";
-    const arr = JSON.parse(localStorage.getItem(key) || "[]");
-    arr.push({ name, score, t: Date.now() });
-    arr.sort((a,b)=> b.score - a.score);
-    localStorage.setItem(key, JSON.stringify(arr.slice(0,10)));
-    showRank();
-  }
-
-  function showRank() {
-    const key = "towerbattle_rank";
-    const arr = JSON.parse(localStorage.getItem(key) || "[]");
-    const ul = el("ranking");
-    ul.innerHTML = "";
-    arr.forEach((d,i)=>{
-      const li = document.createElement("li");
-      li.innerHTML = `<span>${i+1}. ${escapeHtml(d.name)}</span><span>${d.score}</span>`;
-      ul.appendChild(li);
-    });
-    inputArea.classList.add("hidden");
-    rankArea.classList.remove("hidden");
-  }
-
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    ctx.restore();
   }
 
   function bindControls() {
     const hold = (node, action) => {
       let t = null;
-      const start = (e)=>{ e.preventDefault(); action(); t=setInterval(action, 50); };
-      const end   = (e)=>{ e.preventDefault(); if (t) clearInterval(t); t=null; };
-      node.addEventListener("touchstart", start, { passive:false });
-      node.addEventListener("touchend", end);
-      node.addEventListener("touchcancel", end);
-      node.addEventListener("mousedown", start);
-      node.addEventListener("mouseup", end);
-      node.addEventListener("mouseleave", end);
+      const s = (e)=>{ e.preventDefault(); action(); t=setInterval(action, 50); };
+      const e = (e)=>{ e.preventDefault(); if (t) clearInterval(t); t=null; };
+      node.addEventListener("touchstart", s, { passive:false });
+      node.addEventListener("touchend", e);
+      node.addEventListener("touchcancel", e);
+      node.addEventListener("mousedown", s);
+      node.addEventListener("mouseup", e);
+      node.addEventListener("mouseleave", e);
     };
 
-    hold(el("L"), ()=>move(-1));
-    hold(el("R"), ()=>move(+1));
-    el("R0").addEventListener("click", rotate);
-    el("R0").addEventListener("touchstart", (e)=>{ e.preventDefault(); rotate(); }, { passive:false });
+    hold(document.getElementById("L"), ()=>move(-1));
+    hold(document.getElementById("R"), ()=>move(+1));
 
-    el("drop").addEventListener("click", drop);
-    el("drop").addEventListener("touchstart", (e)=>{ e.preventDefault(); drop(); }, { passive:false });
+    const rot = document.getElementById("Rot");
+    rot.addEventListener("click", rotate);
+    rot.addEventListener("touchstart", (e)=>{ e.preventDefault(); rotate(); }, { passive:false });
+
+    const dr = document.getElementById("drop");
+    dr.addEventListener("click", drop);
+    dr.addEventListener("touchstart", (e)=>{ e.preventDefault(); drop(); }, { passive:false });
   }
-
 })();
 </script>
 </body>
