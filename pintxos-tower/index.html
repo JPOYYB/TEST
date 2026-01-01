@@ -3,30 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Pintxos Tower (Text ver)</title>
+    <title>Pintxos Tower (Image Ver)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
     <style>
+        /* スタイル設定（変更なし） */
         body { margin: 0; padding: 0; overflow: hidden; background-color: #f0f0f0; font-family: sans-serif; touch-action: none; }
-        
-        /* ゲーム画面 */
         canvas { display: block; position: fixed; top: 0; left: 0; z-index: 0; }
-
-        /* UIレイヤー */
         #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
         #score-board { position: absolute; top: 20px; left: 20px; font-size: 24px; font-weight: bold; color: #333; text-shadow: 2px 2px 0px white; }
-
-        /* 操作ボタン */
         #controls { position: absolute; bottom: 30px; left: 0; width: 100%; height: 90px; display: flex; justify-content: center; align-items: center; gap: 20px; pointer-events: auto; }
         .control-btn { width: 60px; height: 60px; background: rgba(255,255,255,0.9); border: 2px solid #888; border-radius: 50%; font-size: 24px; cursor: pointer; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 5px rgba(0,0,0,0.2); user-select: none; -webkit-user-select: none; }
         .control-btn:active { background: #ccc; transform: translateY(2px); }
         #btn-drop { width: 80px; height: 80px; background: #ff4757; color: white; border: none; font-size: 32px; }
-
-        /* 画面オーバーレイ */
         .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.95); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 20; pointer-events: auto; }
         .hidden { display: none !important; }
-        
         button.primary-btn { padding: 15px 40px; font-size: 18px; background: #2ecc71; color: white; border: none; border-radius: 30px; margin-top: 15px; cursor: pointer; }
-        
         #ranking-list { padding: 0; list-style: none; margin-top:10px; }
         #ranking-list li { margin: 5px 0; border-bottom: 1px solid #ddd; padding: 5px; width: 220px; display:flex; justify-content:space-between; }
     </style>
@@ -45,7 +36,7 @@
 
     <div id="title-screen" class="overlay">
         <h1>Pintxos Tower</h1>
-        <p>食材(文字)を積み上げろ！</p>
+        <p>画像を積み上げろ！</p>
         <button class="primary-btn" onclick="startGame()">START</button>
     </div>
 
@@ -67,6 +58,7 @@
     </div>
 
 <script>
+    // Matter.js のモジュール初期化
     const Engine = Matter.Engine,
           Render = Matter.Render,
           Runner = Matter.Runner,
@@ -82,17 +74,22 @@
     let gameActive = false;
     let score = 0;
     
-    // 画像の代わりに「文字（絵文字）」リストを使用
-    const FOOD_EMOJIS = ["🥓", "🧀", "🍤", "🥒", "🍅", "🍖", "🥖", "🥔", "🥚", "🍄", "🥑"];
+    // ★変更点: 画像ファイルのパスリスト
+    // imgフォルダの中の 1.png から 11.png を使用します
+    const IMAGES = [];
+    for(let i=1; i<=11; i++) IMAGES.push(`./img/${i}.png`);
 
     let w = window.innerWidth;
     let h = window.innerHeight;
 
+    // ページ読み込み完了時に初期化
     window.onload = function() { init(); };
 
     function init() {
+        // エンジン作成
         engine = Engine.create();
         
+        // レンダラー作成
         render = Render.create({
             element: document.body,
             engine: engine,
@@ -100,120 +97,114 @@
                 width: w,
                 height: h,
                 background: '#f0f0f0',
-                wireframes: false, // 図形を塗りつぶす
+                wireframes: false, // 画像を表示するためにfalse
                 pixelRatio: 1
             }
         });
 
-        // カスタム描画：Matter.jsの標準描画の「後」に文字を書き込む
-        Events.on(render, 'afterRender', function() {
-            const context = render.context;
-            context.font = "50px serif"; // 文字サイズ
-            context.textAlign = "center";
-            context.textBaseline = "middle";
+        // ★変更点: 絵文字描画用のカスタム処理を削除しました
 
-            const bodies = Composite.allBodies(engine.world);
-            
-            bodies.forEach(body => {
-                // 'labelContent' という独自プロパティを持っていたら描画する
-                if (body.labelContent) {
-                    context.save();
-                    // 物体の位置と角度に合わせて座標を変換
-                    context.translate(body.position.x, body.position.y);
-                    context.rotate(body.angle);
-                    // 文字を描く（影付き）
-                    context.fillStyle = "rgba(0,0,0,0.2)";
-                    context.fillText(body.labelContent, 2, 4); // 影
-                    context.fillStyle = "#000"; 
-                    context.fillText(body.labelContent, 0, 0); // 本体
-                    context.restore();
-                }
-            });
-        });
-
+        // 床の作成と配置
         createGround();
+
+        // 描画と物理演算の開始
         Render.run(render);
         runner = Runner.create();
         Runner.run(runner, engine);
 
+        // ゲームループイベントの登録
         Events.on(engine, 'beforeUpdate', updateLoop);
         
+        // 画面リサイズ時の対応
         window.addEventListener('resize', () => {
              render.canvas.width = window.innerWidth;
              render.canvas.height = window.innerHeight;
         });
     }
 
+    // 床（皿）を作成する関数
     function createGround() {
         if(ground) Composite.remove(engine.world, ground);
         const groundY = h - 30; 
         ground = Bodies.rectangle(w/2, groundY, w, 60, { 
             isStatic: true,
             label: 'Ground',
-            render: { fillStyle: '#8b4513' }
+            render: { fillStyle: '#8b4513' } // 茶色
         });
         Composite.add(engine.world, ground);
     }
 
+    // ゲーム開始処理
     function startGame() {
+        // UIの切り替え
         document.getElementById('title-screen').classList.add('hidden');
         document.getElementById('game-over-screen').classList.add('hidden');
         document.getElementById('controls').classList.remove('hidden');
 
+        // 世界をリセット
         Composite.clear(engine.world);
         Engine.clear(engine);
         
+        // 画面サイズ再取得
         w = window.innerWidth; h = window.innerHeight;
         render.canvas.width = w; render.canvas.height = h;
 
+        // 床とカメラを再設定
         createGround();
         Render.lookAt(render, { min: { x: 0, y: 0 }, max: { x: w, y: h } });
 
+        // スコアリセット
         score = 0;
         document.getElementById('score-val').innerText = score;
         gameActive = true;
         
+        // 最初のピンチョスを生成
         spawnPintxo();
     }
 
+    // ピンチョス（画像）を生成する関数
     function spawnPintxo() {
         if (!gameActive) return;
 
-        // ランダムに食材（文字）を選ぶ
-        const emoji = FOOD_EMOJIS[Math.floor(Math.random() * FOOD_EMOJIS.length)];
+        // ★変更点: ランダムに画像ファイルを選ぶ
+        const imgIndex = Math.floor(Math.random() * IMAGES.length);
+        const imgPath = IMAGES[imgIndex];
         
         const spawnY = render.bounds.min.y + 100;
         const spawnX = w / 2;
 
-        // 四角い物体を作成（白い豆腐のようなブロック）
-        currentPintxo = Bodies.rectangle(spawnX, spawnY, 70, 70, { 
+        // ★変更点: 画像スプライトを使った物体作成
+        // 形状は正方形(Rectangle)のまま
+        currentPintxo = Bodies.rectangle(spawnX, spawnY, 80, 80, { 
             label: 'Pintxo',
-            restitution: 0.1,
-            friction: 0.5,
+            restitution: 0.1, // 跳ね返り
+            friction: 0.5,    // 摩擦
             render: {
-                fillStyle: '#ffffff', // 白い背景
-                strokeStyle: '#333333', // 黒い枠線
-                lineWidth: 2
+                sprite: {
+                    texture: imgPath, // 画像のパスを指定
+                    xScale: 0.8,      // 画像の縮尺 (例: 100pxの画像を80pxに合わせる)
+                    yScale: 0.8
+                }
             }
         });
         
-        // ★重要：物体に「何の文字を表示するか」を記憶させる
-        currentPintxo.labelContent = emoji;
-
+        // 操作中は空中で静止させる
         Body.setStatic(currentPintxo, true);
         currentPintxo.isDropped = false;
         Composite.add(engine.world, currentPintxo);
         isDropping = false;
     }
 
+    // ゲームループ（毎フレーム実行される処理）
     function updateLoop() {
         if (!gameActive) return;
 
-        // カメラ制御
+        // --- カメラ制御 ---
         let allBodies = Composite.allBodies(engine.world);
         let highestY = ground.position.y;
         let hasStack = false;
 
+        // 積み上がった物体の中で一番高い位置を探す
         for(let b of allBodies) {
             if(b.label === 'Pintxo' && b !== currentPintxo) { 
                 if(b.position.y < highestY) {
@@ -223,14 +214,15 @@
             }
         }
 
+        // カメラの目標位置を計算
         let targetTopY = 0;
         if (hasStack) {
-            // 最高点から少し余裕を持たせる
-            targetTopY = highestY - (h * 0.5); 
+            targetTopY = highestY - (h * 0.5); // 最高点が画面中央に来るように
         }
 
-        if (targetTopY > 0) targetTopY = 0; // 地面より下には行かない
+        if (targetTopY > 0) targetTopY = 0; // 地面より下を映さない
 
+        // カメラをスムーズに移動
         const currentTopY = render.bounds.min.y;
         if (targetTopY < currentTopY) {
             const newY = currentTopY + (targetTopY - currentTopY) * 0.05;
@@ -239,12 +231,14 @@
                 max: { x: w, y: newY + h }
             });
         } else if (currentTopY < 0 && !hasStack) {
+             // 積み木がないのにカメラが上にあればリセット
              Render.lookAt(render, { min: { x: 0, y: 0 }, max: { x: w, y: h } });
         }
 
-        // ゲームオーバー判定
+        // --- ゲームオーバー判定 ---
         const deadLine = ground.position.y + h;
         allBodies.forEach(b => {
+            // 操作中以外のピンチョスが画面外（下）に落ちたら
             if (b.label === 'Pintxo' && b !== currentPintxo) {
                 if (b.position.y > deadLine) {
                     gameOver();
@@ -253,7 +247,7 @@
         });
     }
 
-    // 操作
+    // --- 操作関数 ---
     function move(dir) {
         if(currentPintxo && !isDropping) Body.translate(currentPintxo, {x: dir*6, y:0});
     }
@@ -263,8 +257,9 @@
     function drop() {
         if(currentPintxo && !isDropping) {
             isDropping = true;
-            Body.setStatic(currentPintxo, false);
+            Body.setStatic(currentPintxo, false); // 物理演算開始
             currentPintxo.isDropped = true;
+            // 次の生成を予約
             setTimeout(() => {
                 if(gameActive) {
                     calcScore(currentPintxo);
@@ -274,6 +269,7 @@
         }
     }
 
+    // スコア計算
     function calcScore(body) {
         const diff = ground.position.y - body.position.y;
         if (diff > 0) {
@@ -282,6 +278,7 @@
         }
     }
 
+    // ゲームオーバー処理
     function gameOver() {
         gameActive = false;
         document.getElementById('final-score').innerText = score;
@@ -291,13 +288,13 @@
         document.getElementById('ranking-area').classList.add('hidden');
     }
 
-    // ランキング
+    // --- ランキング機能（ローカルストレージ） ---
     window.saveScore = function() {
         const name = document.getElementById('player-name').value || "名無し";
         const data = JSON.parse(localStorage.getItem('pintxosRank')) || [];
         data.push({ name: name, score: score });
-        data.sort((a,b)=>b.score-a.score);
-        localStorage.setItem('pintxosRank', JSON.stringify(data.slice(0,5)));
+        data.sort((a,b)=>b.score-a.score); // 降順ソート
+        localStorage.setItem('pintxosRank', JSON.stringify(data.slice(0,5))); // Top5保存
         showRank();
     };
     function showRank() {
@@ -312,12 +309,13 @@
     }
     window.resetGame = function() { startGame(); };
 
-    // ボタン設定
+    // --- ボタンイベント設定 ---
     const btnL = document.getElementById('btn-left');
     const btnR = document.getElementById('btn-right');
     const btnRot = document.getElementById('btn-rotate');
     const btnDrop = document.getElementById('btn-drop');
 
+    // 長押し対応のヘルパー関数
     const hold = (btn, action) => {
         let t;
         const s = (e)=>{ e.preventDefault(); action(); t=setInterval(action,50); };
@@ -330,6 +328,7 @@
     hold(btnL, ()=>move(-1));
     hold(btnR, ()=>move(1));
     
+    // クリック・タッチ対応
     btnRot.addEventListener('click', rotate);
     btnRot.addEventListener('touchstart', (e)=>{e.preventDefault(); rotate()});
     btnDrop.addEventListener('click', drop);
