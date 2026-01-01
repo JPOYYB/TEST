@@ -1,334 +1,505 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Pintxos Tower</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/poly-decomp@0.3.0/build/decomp.min.js"></script>
-    <style>
-        body { margin: 0; padding: 0; overflow: hidden; background-color: #f0f0f0; font-family: sans-serif; touch-action: none; }
-        canvas { display: block; position: fixed; top: 0; left: 0; z-index: 0; }
-        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
-        #score-board { position: absolute; top: 20px; left: 20px; font-size: 24px; font-weight: bold; color: #333; text-shadow: 2px 2px 0px white; }
-        /* 操作ボタンの位置調整 */
-        #controls { position: absolute; bottom: 30px; left: 0; width: 100%; height: 90px; display: flex; justify-content: center; align-items: center; gap: 20px; pointer-events: auto; }
-        .control-btn { width: 60px; height: 60px; background: rgba(255,255,255,0.9); border: 2px solid #888; border-radius: 50%; font-size: 24px; cursor: pointer; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 5px rgba(0,0,0,0.2); user-select: none; -webkit-user-select: none; }
-        .control-btn:active { background: #ccc; transform: translateY(2px); }
-        #btn-drop { width: 80px; height: 80px; background: #ff4757; color: white; border: none; font-size: 32px; }
-        .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.95); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 20; pointer-events: auto; }
-        .hidden { display: none !important; }
-        button.primary-btn { padding: 15px 40px; font-size: 18px; background: #2ecc71; color: white; border: none; border-radius: 30px; margin-top: 15px; cursor: pointer; }
-        #ranking-list { padding: 0; list-style: none; margin-top:10px; }
-        #ranking-list li { margin: 5px 0; border-bottom: 1px solid #ddd; padding: 5px; width: 220px; display:flex; justify-content:space-between; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Pintxos Tower</title>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/poly-decomp@0.3.0/build/decomp.min.js"></script>
+
+  <style>
+    body { margin: 0; padding: 0; overflow: hidden; background-color: #f0f0f0; font-family: sans-serif; touch-action: none; }
+    canvas { display: block; position: fixed; top: 0; left: 0; z-index: 0; }
+    #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+    #score-board { position: absolute; top: 20px; left: 20px; font-size: 24px; font-weight: bold; color: #333; text-shadow: 2px 2px 0px white; }
+    #controls { position: absolute; bottom: 30px; left: 0; width: 100%; height: 90px; display: flex; justify-content: center; align-items: center; gap: 20px; pointer-events: auto; }
+    .control-btn { width: 60px; height: 60px; background: rgba(255,255,255,0.9); border: 2px solid #888; border-radius: 50%; font-size: 24px; cursor: pointer; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 5px rgba(0,0,0,0.2); user-select: none; -webkit-user-select: none; }
+    .control-btn:active { background: #ccc; transform: translateY(2px); }
+    #btn-drop { width: 80px; height: 80px; background: #ff4757; color: white; border: none; font-size: 32px; }
+    .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.95); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 20; pointer-events: auto; }
+    .hidden { display: none !important; }
+    button.primary-btn { padding: 15px 40px; font-size: 18px; background: #2ecc71; color: white; border: none; border-radius: 30px; margin-top: 15px; cursor: pointer; }
+    #ranking-list { padding: 0; list-style: none; margin-top:10px; }
+    #ranking-list li { margin: 5px 0; border-bottom: 1px solid #ddd; padding: 5px; width: 220px; display:flex; justify-content:space-between; }
+  </style>
 </head>
 <body>
 
-    <div id="ui-layer">
-        <div id="score-board">SCORE: <span id="score-val">0</span></div>
-        <div id="controls" class="hidden">
-            <button class="control-btn" id="btn-left">⬅️</button>
-            <button class="control-btn" id="btn-rotate">🔄</button>
-            <button class="control-btn" id="btn-right">➡️</button>
-            <button class="control-btn" id="btn-drop">⬇️</button>
-        </div>
+  <div id="ui-layer">
+    <div id="score-board">SCORE: <span id="score-val">0</span></div>
+    <div id="controls" class="hidden">
+      <button class="control-btn" id="btn-left">⬅️</button>
+      <button class="control-btn" id="btn-rotate">🔄</button>
+      <button class="control-btn" id="btn-right">➡️</button>
+      <button class="control-btn" id="btn-drop">⬇️</button>
     </div>
+  </div>
 
-    <div id="title-screen" class="overlay">
-        <h1>Pintxos Tower</h1>
-        <p>画像を積み上げろ！</p>
-        <button class="primary-btn" onclick="startGame()">START</button>
-    </div>
+  <div id="title-screen" class="overlay">
+    <h1>Pintxos Tower</h1>
+    <p>画像を積み上げろ！</p>
+    <button class="primary-btn" onclick="startGame()">START</button>
+  </div>
 
-    <div id="game-over-screen" class="overlay hidden">
-        <h1>GAME OVER</h1>
-        <p>Score: <span id="final-score">0</span></p>
-        <div id="input-area">
-            <input type="text" id="player-name" placeholder="名前を入力" maxlength="8" style="padding:10px; font-size:16px; text-align:center;">
-            <br>
-            <button class="primary-btn" onclick="saveScore()">ランキング登録</button>
-            <br>
-            <button style="margin-top:15px; background:none; border:none; text-decoration:underline; color:#666;" onclick="resetGame()">リトライ</button>
-        </div>
-        <div id="ranking-area" class="hidden">
-            <h3>ランキング</h3>
-            <ul id="ranking-list"></ul>
-            <button class="primary-btn" onclick="resetGame()">もう一度</button>
-        </div>
+  <div id="game-over-screen" class="overlay hidden">
+    <h1>GAME OVER</h1>
+    <p>Score: <span id="final-score">0</span></p>
+    <div id="input-area">
+      <input type="text" id="player-name" placeholder="名前を入力" maxlength="8" style="padding:10px; font-size:16px; text-align:center;">
+      <br>
+      <button class="primary-btn" onclick="saveScore()">ランキング登録</button>
+      <br>
+      <button style="margin-top:15px; background:none; border:none; text-decoration:underline; color:#666;" onclick="resetGame()">リトライ</button>
     </div>
+    <div id="ranking-area" class="hidden">
+      <h3>ランキング</h3>
+      <ul id="ranking-list"></ul>
+      <button class="primary-btn" onclick="resetGame()">もう一度</button>
+    </div>
+  </div>
 
 <script>
-    const Engine = Matter.Engine,
-          Render = Matter.Render,
-          Runner = Matter.Runner,
-          Bodies = Matter.Bodies,
-          Composite = Matter.Composite,
-          Events = Matter.Events,
-          Body = Matter.Body,
-          Vertices = Matter.Vertices;
+  // poly-decomp を Matter.js の fromVertices で使えるように
+  window.decomp = decomp;
 
-    let engine, render, runner;
-    let ground;
-    let currentPintxo = null;
-    let isDropping = false;
-    let gameActive = false;
-    let score = 0;
-    
-    const IMAGES = [];
-    for(let i=1; i<=11; i++) IMAGES.push(`./img/${i}.png`);
+  const Engine = Matter.Engine,
+        Render = Matter.Render,
+        Runner = Matter.Runner,
+        Bodies = Matter.Bodies,
+        Composite = Matter.Composite,
+        Events = Matter.Events,
+        Body = Matter.Body;
 
-    let w = window.innerWidth;
-    let h = window.innerHeight;
+  let engine, render, runner;
+  let ground;
+  let currentPintxo = null;
+  let isDropping = false;
+  let gameActive = false;
+  let score = 0;
 
-    window.onload = function() { init(); };
+  const IMAGES = [];
+  for(let i=1; i<=11; i++) IMAGES.push(`./img/${i}.png`);
 
-    function init() {
-        engine = Engine.create();
-        
-        render = Render.create({
-            element: document.body,
-            engine: engine,
-            options: {
-                width: w,
-                height: h,
-                background: '#f0f0f0',
-                wireframes: false, // 画像モード
-                pixelRatio: 1
-            }
-        });
+  let w = window.innerWidth;
+  let h = window.innerHeight;
 
-        createGround();
-        Render.run(render);
-        runner = Runner.create();
-        Runner.run(runner, engine);
+  // ====== 透過PNG(アルファ) → 輪郭ポリゴン抽出（B方式） ======
+  const shapeCache = new Map();
 
-        Events.on(engine, 'beforeUpdate', updateLoop);
-        
-        window.addEventListener('resize', () => {
-             render.canvas.width = window.innerWidth;
-             render.canvas.height = window.innerHeight;
-        });
+  function loadImage(src){
+    return new Promise((resolve, reject)=>{
+      const img = new Image();
+      img.onload = ()=>resolve(img);
+      img.onerror = (e)=>reject(e);
+      img.src = src;
+    });
+  }
+
+  function polygonArea(pts){
+    let a=0;
+    for(let i=0;i<pts.length;i++){
+      const p=pts[i], q=pts[(i+1)%pts.length];
+      a += (p.x*q.y - q.x*p.y);
     }
+    return a/2;
+  }
 
-    // ★土台の設定（小さく、高く）
-    function createGround() {
-        if(ground) Composite.remove(engine.world, ground);
-        
-        // 高さ: 下から180px（さらに上げてボタン回避）
-        const groundY = h - 180; 
-        // 幅: 画面の30%（さらに小さく）
-        const groundWidth = w * 0.3;
-        
-        // 厚み: 20px
-        ground = Bodies.rectangle(w/2, groundY, groundWidth, 20, { 
-            isStatic: true,
-            label: 'Ground',
-            render: { fillStyle: '#8b4513' },
-            friction: 1.0 // 滑りにくくする
-        });
-        Composite.add(engine.world, ground);
-    }
+  // Moore neighbor tracing で外周輪郭を1本抽出（穴は無視）
+  function traceMoore(boundary, w, h, sx, sy){
+    const dirs = [
+      {x:1,y:0},{x:1,y:1},{x:0,y:1},{x:-1,y:1},
+      {x:-1,y:0},{x:-1,y:-1},{x:0,y:-1},{x:1,y:-1}
+    ];
+    let x=sx, y=sy;
+    let bx=sx-1, by=sy;         // backtrack
+    const startX=x, startY=y;
+    const out=[];
+    const safety = w*h*8;
+    let steps=0;
 
-    function startGame() {
-        document.getElementById('title-screen').classList.add('hidden');
-        document.getElementById('game-over-screen').classList.add('hidden');
-        document.getElementById('controls').classList.remove('hidden');
-
-        Composite.clear(engine.world);
-        Engine.clear(engine);
-        
-        w = window.innerWidth; h = window.innerHeight;
-        render.canvas.width = w; render.canvas.height = h;
-
-        createGround();
-        Render.lookAt(render, { min: { x: 0, y: 0 }, max: { x: w, y: h } });
-
-        score = 0;
-        document.getElementById('score-val').innerText = score;
-        gameActive = true;
-        
-        spawnPintxo();
-    }
-
-    function spawnPintxo() {
-        if (!gameActive) return;
-
-        const imgIndex = Math.floor(Math.random() * IMAGES.length);
-        const imgPath = IMAGES[imgIndex];
-        
-        const spawnY = render.bounds.min.y + 100;
-        const spawnX = w / 2;
-
-        // ★重要：透過画像のシェイプに近づける処理
-        // 100x100pxの正方形ではなく、「横長の六角形」のような形を定義します。
-        // これにより、画像の四隅の透明な部分が当たり判定から除外されます。
-        
-        // 頂点データ（0-100の範囲で定義）
-        // 中心(50,50)付近に実体がある想定で、四隅を削った形
-        const arrowSets = [
-            { x: 15, y: 20 }, // 左上
-            { x: 85, y: 20 }, // 右上
-            { x: 100, y: 50 }, // 右端
-            { x: 85, y: 80 }, // 右下
-            { x: 15, y: 80 }, // 左下
-            { x: 0,  y: 50 }  // 左端
-        ];
-
-        // 頂点から物体を作成
-        currentPintxo = Bodies.fromVertices(spawnX, spawnY, [arrowSets], {
-            label: 'Pintxo',
-            restitution: 0.1, // 跳ね返りすぎない
-            friction: 0.8,    // よく止まるように
-            render: {
-                sprite: {
-                    texture: imgPath,
-                    // 画像の表示倍率（0.8倍 = 80px相当）
-                    xScale: 0.8,
-                    yScale: 0.8
-                }
-            }
-        }, true);
-
-        // ★さらに重要：当たり判定のサイズ調整（肉抜き）
-        // 画像は0.8倍で表示していますが、当たり判定はさらに小さく(0.55倍)します。
-        // これにより、画像のフチ（透明部分）が重なり合うようになります。
-        
-        if(currentPintxo) {
-            // 当たり判定のスケールを縮小
-            // 試行錯誤の結果、0.55〜0.6くらいが「浮いて見えない」ベストな値です
-            Body.scale(currentPintxo, 0.65, 0.65); 
-
-            Body.setStatic(currentPintxo, true);
-            currentPintxo.isDropped = false;
-            Composite.add(engine.world, currentPintxo);
-            isDropping = false;
-        }
-    }
-
-    function updateLoop() {
-        if (!gameActive) return;
-
-        let allBodies = Composite.allBodies(engine.world);
-        let highestY = ground.position.y;
-        let hasStack = false;
-
-        for(let b of allBodies) {
-            if(b.label === 'Pintxo' && b !== currentPintxo) { 
-                if(b.position.y < highestY) {
-                    highestY = b.position.y;
-                    hasStack = true;
-                }
-            }
-        }
-
-        let targetTopY = 0;
-        if (hasStack) {
-            targetTopY = highestY - (h * 0.5);
-        }
-
-        if (targetTopY > 0) targetTopY = 0;
-
-        const currentTopY = render.bounds.min.y;
-        if (targetTopY < currentTopY) {
-            const newY = currentTopY + (targetTopY - currentTopY) * 0.05;
-            Render.lookAt(render, {
-                min: { x: 0, y: newY },
-                max: { x: w, y: newY + h }
-            });
-        } else if (currentTopY < 0 && !hasStack) {
-             Render.lookAt(render, { min: { x: 0, y: 0 }, max: { x: w, y: h } });
-        }
-
-        const deadLine = ground.position.y + h;
-        allBodies.forEach(b => {
-            if (b.label === 'Pintxo' && b !== currentPintxo) {
-                if (b.position.y > deadLine) {
-                    gameOver();
-                }
-            }
-        });
-    }
-
-    function move(dir) {
-        if(currentPintxo && !isDropping) Body.translate(currentPintxo, {x: dir*6, y:0});
-    }
-    function rotate() {
-        if(currentPintxo && !isDropping) Body.rotate(currentPintxo, Math.PI/4);
-    }
-    function drop() {
-        if(currentPintxo && !isDropping) {
-            isDropping = true;
-            Body.setStatic(currentPintxo, false);
-            currentPintxo.isDropped = true;
-            setTimeout(() => {
-                if(gameActive) {
-                    calcScore(currentPintxo);
-                    spawnPintxo();
-                }
-            }, 2000);
-        }
-    }
-
-    function calcScore(body) {
-        const diff = ground.position.y - body.position.y;
-        if (diff > 0) {
-            score += (Math.floor(diff / 10) + 10);
-            document.getElementById('score-val').innerText = score;
-        }
-    }
-
-    function gameOver() {
-        gameActive = false;
-        document.getElementById('final-score').innerText = score;
-        document.getElementById('controls').classList.add('hidden');
-        document.getElementById('game-over-screen').classList.remove('hidden');
-        document.getElementById('input-area').classList.remove('hidden');
-        document.getElementById('ranking-area').classList.add('hidden');
-    }
-
-    window.saveScore = function() {
-        const name = document.getElementById('player-name').value || "名無し";
-        const data = JSON.parse(localStorage.getItem('pintxosRank')) || [];
-        data.push({ name: name, score: score });
-        data.sort((a,b)=>b.score-a.score);
-        localStorage.setItem('pintxosRank', JSON.stringify(data.slice(0,5)));
-        showRank();
+    const dirIndex = (dx,dy)=>{
+      for(let i=0;i<dirs.length;i++) if(dirs[i].x===dx && dirs[i].y===dy) return i;
+      return 0;
     };
-    function showRank() {
-        const data = JSON.parse(localStorage.getItem('pintxosRank')) || [];
-        const list = document.getElementById('ranking-list');
-        list.innerHTML = "";
-        data.forEach((d,i) => {
-            list.innerHTML += `<li><span>${i+1}.${d.name}</span><span>${d.score}</span></li>`;
-        });
-        document.getElementById('input-area').classList.add('hidden');
-        document.getElementById('ranking-area').classList.remove('hidden');
-    }
-    window.resetGame = function() { startGame(); };
 
-    const btnL = document.getElementById('btn-left');
-    const btnR = document.getElementById('btn-right');
-    const btnRot = document.getElementById('btn-rotate');
-    const btnDrop = document.getElementById('btn-drop');
+    do{
+      out.push({x,y});
+      let bi = dirIndex(x-bx, y-by);
+      let found=false;
+      for(let k=0;k<8;k++){
+        const idx = (bi+1+k)%8;
+        const nx=x+dirs[idx].x, ny=y+dirs[idx].y;
+        if(nx<0||nx>=w||ny<0||ny>=h) continue;
+        if(boundary[ny*w+nx]){
+          const pb=(idx+7)%8;
+          bx=x+dirs[pb].x; by=y+dirs[pb].y;
+          x=nx; y=ny;
+          found=true;
+          break;
+        }
+      }
+      if(!found) break;
+      steps++;
+      if(steps>safety) break;
+    }while(!(x===startX && y===startY));
 
-    const hold = (btn, action) => {
-        let t;
-        const s = (e)=>{ e.preventDefault(); action(); t=setInterval(action,50); };
-        const e = (e)=>{ e.preventDefault(); clearInterval(t); };
-        btn.addEventListener('touchstart',s,{passive:false});
-        btn.addEventListener('touchend',e);
-        btn.addEventListener('mousedown',s);
-        btn.addEventListener('mouseup',e);
+    return out;
+  }
+
+  // RDP 簡易（頂点を減らす）
+  function rdpSimplify(points, eps){
+    if(points.length<3) return points;
+
+    const sq = (x)=>x*x;
+    const dist2 = (p,a,b)=>{
+      const vx=b.x-a.x, vy=b.y-a.y;
+      const wx=p.x-a.x, wy=p.y-a.y;
+      const c1 = vx*wx + vy*wy;
+      if (c1<=0) return sq(p.x-a.x)+sq(p.y-a.y);
+      const c2 = vx*vx+vy*vy;
+      if (c2<=c1) return sq(p.x-b.x)+sq(p.y-b.y);
+      const t=c1/c2;
+      const px=a.x+t*vx, py=a.y+t*vy;
+      return sq(p.x-px)+sq(p.y-py);
     };
-    hold(btnL, ()=>move(-1));
-    hold(btnR, ()=>move(1));
-    
-    btnRot.addEventListener('click', rotate);
-    btnRot.addEventListener('touchstart', (e)=>{e.preventDefault(); rotate()});
-    btnDrop.addEventListener('click', drop);
-    btnDrop.addEventListener('touchstart', (e)=>{e.preventDefault(); drop()});
+    const eps2=eps*eps;
 
+    function rec(pts){
+      let maxD=0, idx=-1;
+      const a=pts[0], b=pts[pts.length-1];
+      for(let i=1;i<pts.length-1;i++){
+        const d=dist2(pts[i],a,b);
+        if(d>maxD){ maxD=d; idx=i; }
+      }
+      if(maxD>eps2){
+        const left=rec(pts.slice(0,idx+1));
+        const right=rec(pts.slice(idx));
+        return left.slice(0,-1).concat(right);
+      }
+      return [a,b];
+    }
+    return rec(points);
+  }
+
+  function capVertices(pts, maxV){
+    if(pts.length<=maxV) return pts;
+    const step = pts.length / maxV;
+    const out=[];
+    for(let i=0;i<maxV;i++) out.push(pts[Math.floor(i*step)]);
+    return out;
+  }
+
+  // PNGアルファから外周輪郭を抽出し、中心基準のローカル頂点にして返す
+  async function verticesFromAlpha(imgPath, opt={}){
+    if (shapeCache.has(imgPath)) return shapeCache.get(imgPath);
+
+    const threshold = opt.threshold ?? 18;        // 半透明縁を無視するなら上げる(例:25-40)
+    const sampleScale = opt.sampleScale ?? 0.25;  // 精密にしたいなら0.3〜0.4
+    const simplifyEps = opt.simplifyEps ?? 2.8;   // 大きいほど頂点減って軽い
+    const maxVertices = opt.maxVertices ?? 90;    // 精密にしたいなら120
+
+    const img = await loadImage(imgPath);
+
+    const w0 = Math.max(16, Math.floor(img.naturalWidth  * sampleScale));
+    const h0 = Math.max(16, Math.floor(img.naturalHeight * sampleScale));
+
+    const cvs = document.createElement("canvas");
+    cvs.width = w0; cvs.height = h0;
+    const ctx = cvs.getContext("2d", { willReadFrequently:true });
+    ctx.clearRect(0,0,w0,h0);
+    ctx.drawImage(img, 0,0,w0,h0);
+
+    const data = ctx.getImageData(0,0,w0,h0).data;
+    const mask = new Uint8Array(w0*h0);
+    let solid=0;
+
+    for(let y=0;y<h0;y++){
+      for(let x=0;x<w0;x++){
+        const i = (y*w0 + x)*4;
+        const a = data[i+3];
+        if (a > threshold){
+          mask[y*w0 + x] = 1;
+          solid++;
+        }
+      }
+    }
+    if (solid < 30) return null;
+
+    const boundary = new Uint8Array(w0*h0);
+    let sx=-1, sy=-1;
+    for(let y=1;y<h0-1;y++){
+      for(let x=1;x<w0-1;x++){
+        const idx = y*w0+x;
+        if(!mask[idx]) continue;
+        if(!mask[idx-1] || !mask[idx+1] || !mask[idx-w0] || !mask[idx+w0]){
+          boundary[idx]=1;
+          if(sy===-1 || y<sy || (y===sy && x<sx)){ sx=x; sy=y; }
+        }
+      }
+    }
+    if (sx===-1) return null;
+
+    const contour = traceMoore(boundary, w0, h0, sx, sy);
+    if(!contour || contour.length < 20) return null;
+
+    const inv = 1/sampleScale;
+    const cx = w0/2, cy = h0/2;
+    let pts = contour.map(p => ({ x:(p.x - cx)*inv, y:(p.y - cy)*inv }));
+
+    pts = rdpSimplify(pts, simplifyEps*inv);
+    pts = capVertices(pts, maxVertices);
+
+    if (pts.length < 8) return null;
+
+    // Matter.jsはだいたいCWの方が安定しがちなので揃える
+    if (polygonArea(pts) > 0) pts.reverse();
+
+    shapeCache.set(imgPath, pts);
+    return pts;
+  }
+
+  window.onload = function() { init(); };
+
+  function init() {
+    engine = Engine.create();
+
+    render = Render.create({
+      element: document.body,
+      engine: engine,
+      options: {
+        width: w,
+        height: h,
+        background: '#f0f0f0',
+        wireframes: false,
+        pixelRatio: 1
+      }
+    });
+
+    createGround();
+    Render.run(render);
+    runner = Runner.create();
+    Runner.run(runner, engine);
+
+    Events.on(engine, 'beforeUpdate', updateLoop);
+
+    window.addEventListener('resize', () => {
+      w = window.innerWidth; h = window.innerHeight;
+      render.canvas.width = w;
+      render.canvas.height = h;
+      createGround();
+    });
+  }
+
+  // 土台
+  function createGround() {
+    if(ground) Composite.remove(engine.world, ground);
+
+    const groundY = h - 180;
+    const groundWidth = w * 0.3;
+
+    ground = Bodies.rectangle(w/2, groundY, groundWidth, 20, {
+      isStatic: true,
+      label: 'Ground',
+      render: { fillStyle: '#8b4513' },
+      friction: 1.0
+    });
+    Composite.add(engine.world, ground);
+  }
+
+  function startGame() {
+    document.getElementById('title-screen').classList.add('hidden');
+    document.getElementById('game-over-screen').classList.add('hidden');
+    document.getElementById('controls').classList.remove('hidden');
+
+    Composite.clear(engine.world, false);
+    Engine.clear(engine);
+
+    w = window.innerWidth; h = window.innerHeight;
+    render.canvas.width = w; render.canvas.height = h;
+
+    createGround();
+    Render.lookAt(render, { min: { x: 0, y: 0 }, max: { x: w, y: h } });
+
+    score = 0;
+    document.getElementById('score-val').innerText = score;
+    gameActive = true;
+
+    spawnPintxo(); // asyncだけど呼びっぱなしでOK（内部でawaitしてから出現）
+  }
+
+  // ★ここが変更点：透過PNGのアルファから自動で当たり判定ポリゴンを作る
+  async function spawnPintxo() {
+    if (!gameActive) return;
+
+    const imgIndex = Math.floor(Math.random() * IMAGES.length);
+    const imgPath = IMAGES[imgIndex];
+
+    const spawnY = render.bounds.min.y + 100;
+    const spawnX = w / 2;
+
+    // 透過縁が多い/半透明が多いなら threshold を上げる（例: 25〜40）
+    const verts = await verticesFromAlpha(imgPath, {
+      threshold: 18,
+      sampleScale: 0.25,
+      simplifyEps: 2.8,
+      maxVertices: 90
+    });
+
+    // 抽出失敗時の保険（六角形）
+    const fallback = [
+      {x:-40,y:-40},{x:40,y:-40},{x:55,y:0},{x:40,y:40},{x:-40,y:40},{x:-55,y:0}
+    ];
+
+    const shape = verts ?? fallback;
+
+    currentPintxo = Bodies.fromVertices(spawnX, spawnY, [shape], {
+      label: 'Pintxo',
+      restitution: 0.1,
+      friction: 0.8,
+      render: {
+        sprite: {
+          texture: imgPath,
+          xScale: 0.8,
+          yScale: 0.8
+        }
+      }
+    }, true);
+
+    if(currentPintxo) {
+      // 「浮いて見える」なら当たり判定だけ少し小さくする（透明フチが多い画像向け）
+      // 値を下げるほど“肉抜き”が強くなる
+      Body.scale(currentPintxo, 0.95, 0.95);
+
+      Body.setStatic(currentPintxo, true);
+      currentPintxo.isDropped = false;
+      Composite.add(engine.world, currentPintxo);
+      isDropping = false;
+    }
+  }
+
+  function updateLoop() {
+    if (!gameActive) return;
+
+    let allBodies = Composite.allBodies(engine.world);
+    let highestY = ground.position.y;
+    let hasStack = false;
+
+    for(let b of allBodies) {
+      if(b.label === 'Pintxo' && b !== currentPintxo) {
+        if(b.position.y < highestY) {
+          highestY = b.position.y;
+          hasStack = true;
+        }
+      }
+    }
+
+    let targetTopY = 0;
+    if (hasStack) targetTopY = highestY - (h * 0.5);
+    if (targetTopY > 0) targetTopY = 0;
+
+    const currentTopY = render.bounds.min.y;
+    if (targetTopY < currentTopY) {
+      const newY = currentTopY + (targetTopY - currentTopY) * 0.05;
+      Render.lookAt(render, { min: { x: 0, y: newY }, max: { x: w, y: newY + h } });
+    } else if (currentTopY < 0 && !hasStack) {
+      Render.lookAt(render, { min: { x: 0, y: 0 }, max: { x: w, y: h } });
+    }
+
+    // 「下に消えたらミス」でOK：画面外（下）に落ちたらゲームオーバー
+    const deadLine = render.bounds.max.y + 200;
+    allBodies.forEach(b => {
+      if (b.label === 'Pintxo' && b !== currentPintxo) {
+        if (b.position.y > deadLine) gameOver();
+      }
+    });
+  }
+
+  function move(dir) {
+    if(currentPintxo && !isDropping) Body.translate(currentPintxo, {x: dir*6, y:0});
+  }
+  function rotate() {
+    if(currentPintxo && !isDropping) Body.rotate(currentPintxo, Math.PI/4);
+  }
+  function drop() {
+    if(currentPintxo && !isDropping) {
+      isDropping = true;
+      Body.setStatic(currentPintxo, false);
+      currentPintxo.isDropped = true;
+      setTimeout(() => {
+        if(gameActive) {
+          calcScore(currentPintxo);
+          spawnPintxo();
+        }
+      }, 800); // 2秒は長いので短縮（好みで戻してOK）
+    }
+  }
+
+  function calcScore(body) {
+    const diff = ground.position.y - body.position.y;
+    if (diff > 0) {
+      score += (Math.floor(diff / 10) + 10);
+      document.getElementById('score-val').innerText = score;
+    }
+  }
+
+  function gameOver() {
+    if (!gameActive) return;
+    gameActive = false;
+    document.getElementById('final-score').innerText = score;
+    document.getElementById('controls').classList.add('hidden');
+    document.getElementById('game-over-screen').classList.remove('hidden');
+    document.getElementById('input-area').classList.remove('hidden');
+    document.getElementById('ranking-area').classList.add('hidden');
+  }
+
+  window.saveScore = function() {
+    const name = document.getElementById('player-name').value || "名無し";
+    const data = JSON.parse(localStorage.getItem('pintxosRank')) || [];
+    data.push({ name: name, score: score });
+    data.sort((a,b)=>b.score-a.score);
+    localStorage.setItem('pintxosRank', JSON.stringify(data.slice(0,5)));
+    showRank();
+  };
+
+  function showRank() {
+    const data = JSON.parse(localStorage.getItem('pintxosRank')) || [];
+    const list = document.getElementById('ranking-list');
+    list.innerHTML = "";
+    data.forEach((d,i) => {
+      list.innerHTML += `<li><span>${i+1}.${d.name}</span><span>${d.score}</span></li>`;
+    });
+    document.getElementById('input-area').classList.add('hidden');
+    document.getElementById('ranking-area').classList.remove('hidden');
+  }
+
+  window.resetGame = function() { startGame(); };
+
+  const btnL = document.getElementById('btn-left');
+  const btnR = document.getElementById('btn-right');
+  const btnRot = document.getElementById('btn-rotate');
+  const btnDrop = document.getElementById('btn-drop');
+
+  const hold = (btn, action) => {
+    let t;
+    const s = (e)=>{ e.preventDefault(); action(); t=setInterval(action,50); };
+    const e2 = (e)=>{ e.preventDefault(); clearInterval(t); };
+    btn.addEventListener('touchstart', s, {passive:false});
+    btn.addEventListener('touchend', e2);
+    btn.addEventListener('touchcancel', e2);
+    btn.addEventListener('mousedown', s);
+    btn.addEventListener('mouseup', e2);
+    btn.addEventListener('mouseleave', e2);
+  };
+
+  hold(btnL, ()=>move(-1));
+  hold(btnR, ()=>move(1));
+
+  btnRot.addEventListener('click', rotate);
+  btnRot.addEventListener('touchstart', (e)=>{e.preventDefault(); rotate()},{passive:false});
+  btnDrop.addEventListener('click', drop);
+  btnDrop.addEventListener('touchstart', (e)=>{e.preventDefault(); drop()},{passive:false});
 </script>
+
 </body>
 </html>
