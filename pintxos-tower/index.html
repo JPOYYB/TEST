@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Pintxos Tower (Image Ver)</title>
+    <title>Pintxos Tower</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
     <style>
         /* スタイル設定（変更なし） */
@@ -74,8 +74,7 @@
     let gameActive = false;
     let score = 0;
     
-    // ★変更点: 画像ファイルのパスリスト
-    // imgフォルダの中の 1.png から 11.png を使用します
+    // 画像ファイルのパスリスト
     const IMAGES = [];
     for(let i=1; i<=11; i++) IMAGES.push(`./img/${i}.png`);
 
@@ -101,8 +100,6 @@
                 pixelRatio: 1
             }
         });
-
-        // ★変更点: 絵文字描画用のカスタム処理を削除しました
 
         // 床の作成と配置
         createGround();
@@ -166,23 +163,23 @@
     function spawnPintxo() {
         if (!gameActive) return;
 
-        // ★変更点: ランダムに画像ファイルを選ぶ
+        // ランダムに画像ファイルを選ぶ
         const imgIndex = Math.floor(Math.random() * IMAGES.length);
         const imgPath = IMAGES[imgIndex];
         
         const spawnY = render.bounds.min.y + 100;
         const spawnX = w / 2;
 
-        // ★変更点: 画像スプライトを使った物体作成
-        // 形状は正方形(Rectangle)のまま
-        currentPintxo = Bodies.rectangle(spawnX, spawnY, 80, 80, { 
+        // ★変更点: 円形(Circle)に変更
+        // 半径40px (直径80px) の円として作成
+        currentPintxo = Bodies.circle(spawnX, spawnY, 40, { 
             label: 'Pintxo',
             restitution: 0.1, // 跳ね返り
             friction: 0.5,    // 摩擦
             render: {
                 sprite: {
                     texture: imgPath, // 画像のパスを指定
-                    xScale: 0.8,      // 画像の縮尺 (例: 100pxの画像を80pxに合わせる)
+                    xScale: 0.8,      // 画像の縮尺 (100pxの画像を80pxに)
                     yScale: 0.8
                 }
             }
