@@ -5,38 +5,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Pintxos Tower</title>
 
-  <!-- libs -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/poly-decomp@0.3.0/build/decomp.min.js"></script>
-
-  <!-- shape extractor -->
   <script src="./shape-extract.js"></script>
 
   <style>
-    body { margin:0; overflow:hidden; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:#f5f5f5; touch-action:none; }
-    canvas { position:fixed; inset:0; display:block; }
-    #ui { position:fixed; inset:0; pointer-events:none; }
-    #score { position:fixed; top:18px; left:18px; font-weight:900; font-size:40px; color:#222; text-shadow: 0 2px 0 rgba(255,255,255,.8); }
-    #controls { position:fixed; left:0; right:0; bottom:22px; display:flex; gap:18px; justify-content:center; align-items:center; pointer-events:auto; }
-    .btn { width:74px; height:74px; border-radius:999px; border:2px solid rgba(0,0,0,.25); background:rgba(255,255,255,.92); box-shadow:0 10px 20px rgba(0,0,0,.15); font-size:30px; display:grid; place-items:center; user-select:none; -webkit-user-select:none; }
-    .btn:active { transform: translateY(2px); filter: brightness(.95); }
-    #drop { width:110px; height:110px; background:#ff4d57; color:white; border:none; font-size:38px; }
+    body{margin:0;overflow:hidden;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f5f5f5;touch-action:none}
+    canvas{position:fixed;inset:0;display:block}
+    #ui{position:fixed;inset:0;pointer-events:none}
+    #score{position:fixed;top:18px;left:18px;font-weight:900;font-size:40px;color:#222;text-shadow:0 2px 0 rgba(255,255,255,.8)}
+    #controls{position:fixed;left:0;right:0;bottom:22px;display:flex;gap:18px;justify-content:center;align-items:center;pointer-events:auto}
+    .btn{width:74px;height:74px;border-radius:999px;border:2px solid rgba(0,0,0,.25);background:rgba(255,255,255,.92);box-shadow:0 10px 20px rgba(0,0,0,.15);font-size:30px;display:grid;place-items:center;user-select:none;-webkit-user-select:none}
+    .btn:active{transform:translateY(2px);filter:brightness(.95)}
+    #drop{width:110px;height:110px;background:#ff4d57;color:#fff;border:none;font-size:38px}
 
-    .overlay { position:fixed; inset:0; background:rgba(255,255,255,.96); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; z-index:50; }
-    .hidden { display:none !important; }
-    .title { font-size:40px; font-weight:900; letter-spacing:.02em; }
-    .sub { color:#444; }
-    .pill { padding:14px 44px; border-radius:999px; border:none; font-size:20px; font-weight:800; background:#2ecc71; color:white; }
-    .pill:disabled { background:#bfe9cc; color:#fff; }
-    .small { font-size:12px; color:#666; }
+    .overlay{position:fixed;inset:0;background:rgba(255,255,255,.96);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;z-index:50}
+    .hidden{display:none !important}
+    .title{font-size:40px;font-weight:900;letter-spacing:.02em}
+    .sub{color:#444}
+    .pill{padding:14px 44px;border-radius:999px;border:none;font-size:20px;font-weight:800;background:#2ecc71;color:#fff}
+    .pill:disabled{background:#bfe9cc}
 
-    /* debug */
-    #dbgBtn { position:fixed; top:16px; right:16px; z-index:80; pointer-events:auto; background:#222; color:#fff; border:none; border-radius:999px; padding:10px 14px; font-weight:800; box-shadow:0 10px 20px rgba(0,0,0,.2); }
-    #dbgPanel { position:fixed; top:64px; right:16px; width:min(420px, calc(100vw - 32px)); max-height:70vh; overflow:auto; z-index:80; background:rgba(20,20,20,.92); color:#fff; border-radius:16px; padding:14px; display:none; pointer-events:auto; box-shadow:0 20px 40px rgba(0,0,0,.25); }
-    #dbgPanel pre { white-space:pre-wrap; word-break:break-word; font-size:12px; margin:0; }
-    .dbgRow { border-top:1px solid rgba(255,255,255,.12); padding-top:10px; margin-top:10px; }
-    .ok { color:#7CFC9A; }
-    .ng { color:#FF9AA2; }
+    #dbgBtn{position:fixed;top:16px;right:16px;z-index:80;pointer-events:auto;background:#222;color:#fff;border:none;border-radius:999px;padding:10px 14px;font-weight:800;box-shadow:0 10px 20px rgba(0,0,0,.2)}
+    #dbgPanel{position:fixed;top:64px;right:16px;width:min(460px,calc(100vw - 32px));max-height:72vh;overflow:auto;z-index:80;background:rgba(20,20,20,.92);color:#fff;border-radius:16px;padding:14px;display:none;pointer-events:auto;box-shadow:0 20px 40px rgba(0,0,0,.25)}
+    #dbgPanel pre{white-space:pre-wrap;word-break:break-word;font-size:12px;margin:0}
   </style>
 </head>
 <body>
@@ -59,7 +51,7 @@
     <div class="title">Pintxos Tower</div>
     <div class="sub">積み上げろ。落としたら負け。</div>
     <button class="pill" id="startBtn" disabled>LOADING...</button>
-    <div class="small" id="loadHint">ロード中…（debug=1 で詳細表示）</div>
+    <div class="sub" id="loadHint" style="font-size:12px;color:#666">ロード中…（?debug=1）</div>
   </div>
 
   <div id="gameover" class="overlay hidden">
@@ -72,40 +64,44 @@
 (() => {
   "use strict";
 
-  // ====== CONFIG (ここだけ触ればOK) ======
+  // ====== CONFIG（ここだけ触ればOK）======
   const CONFIG = {
-    BUILD_ID: "2026-01-01-DBG1",       // キャッシュ殺し用
+    BUILD_ID: "2026-01-01-CROP2",
     COUNT: 11,
     TEX_DIR: "./img",
     MASK_DIR: "./mask",
-    USE_MASK_IF_EXISTS: true,          // maskが無ければ透過PNG(alpha)から抽出
-    UNREGISTER_SW_ON_DEBUG: true,      // PWA/SWがLOADING事故起こすのでデバッグ時解除
+    USE_MASK_IF_EXISTS: true,
+
     DEBUG_DEFAULT: (new URLSearchParams(location.search).get("debug") === "1"),
+    UNREGISTER_SW_ON_DEBUG: true,
 
-    // Shape extraction tuning
-    SHAPE: {
-      sample: 160,              // downsample（大きいほど精度↑だが重い）
-      alphaThreshold: 16,       // 透過境界（低いほど輪郭が太りやすい）
-      dilateIters: 1,           // 膨張（隙間対策）
-      minSolidRatio: 0.02,      // これ未満ならfallback（細すぎ）
-      simplifyEps: null,        // nullなら自動
-      maxVerts: 64,
-      minVerts: 12,
-      timeoutMs: 12000
-    },
-
-    // Sprite size (見た目の最大辺 px)
+    // 見た目のサイズは「トリミング後」に合わせる（重要）
     TARGET_MAX_PX: 150,
 
-    // physics
+    // 物理当たり判定をほんの少し小さく（まだ隙間が残る時に効く）
+    HIT_INSET: 0.98, // 1.00で無効。0.95〜0.99で調整
+
+    // shape extraction
+    SHAPE: {
+      sample: 180,
+      alphaThreshold: 16,
+      dilateIters: 1,
+      minSolidRatio: 0.02,
+      maxVerts: 64,
+      minVerts: 12,
+      timeoutMs: 12000,
+      cropPadRatio: 0.06,   // bboxを少し広げる（アンチエイリアス吸収）
+      cropPadMinPx: 2,
+      cropPadMaxPx: 24
+    },
+
     MOVE_STEP: 7,
     ROT_STEP: Math.PI / 8,
     GROUND_Y_OFFSET: 180,
     GROUND_W_RATIO: 0.30,
-    DEADLINE_EXTRA: 1.2, // 画面下判定の余裕
+    DEADLINE_EXTRA: 1.2,
 
-    // debug visuals
-    DRAW_COLLIDER_WIREFRAME: true
+    DRAW_COLLIDER_OUTLINE: true
   };
 
   // ====== UI ======
@@ -116,46 +112,39 @@
   const scoreVal = $("scoreVal");
   const finalScore = $("finalScore");
   const retryBtn = $("retryBtn");
-
   const dbgBtn = $("dbgBtn");
   const dbgPanel = $("dbgPanel");
   const dbgText = $("dbgText");
-  let debugOn = CONFIG.DEBUG_DEFAULT;
 
-  function dbgPrint(lines) {
-    dbgText.textContent = lines.join("\n");
-  }
-  function dbgShow(show) {
-    dbgPanel.style.display = show ? "block" : "none";
-  }
+  let debugOn = CONFIG.DEBUG_DEFAULT;
+  dbgPanel.style.display = debugOn ? "block" : "none";
   dbgBtn.addEventListener("click", () => {
     debugOn = !debugOn;
-    dbgShow(debugOn);
+    dbgPanel.style.display = debugOn ? "block" : "none";
+    dbgText.textContent = bootLogs.join("\n");
   });
-  dbgShow(debugOn);
 
-  // ====== Global error hooks (LOADINGで死ぬ原因を画面に出す) ======
   const bootLogs = [];
   function bootLog(s) {
     bootLogs.push(s);
-    if (debugOn) dbgPrint(bootLogs);
+    if (debugOn) dbgText.textContent = bootLogs.join("\n");
   }
+
   window.addEventListener("error", (e) => {
     bootLog(`[FATAL] ${e.message}`);
-    if (e.error && e.error.stack) bootLog(e.error.stack);
+    if (e.error?.stack) bootLog(e.error.stack);
     startBtn.disabled = false;
     startBtn.textContent = "START (ERROR)";
-    $("loadHint").textContent = "エラーで初期化停止。DEBUGを開いて原因を見て。";
+    $("loadHint").textContent = "エラー。DEBUGを開いて原因を見る。";
   });
   window.addEventListener("unhandledrejection", (e) => {
-    bootLog(`[FATAL] unhandledrejection: ${(e.reason && e.reason.message) ? e.reason.message : String(e.reason)}`);
-    if (e.reason && e.reason.stack) bootLog(e.reason.stack);
+    bootLog(`[FATAL] unhandledrejection: ${e.reason?.message ?? String(e.reason)}`);
+    if (e.reason?.stack) bootLog(e.reason.stack);
     startBtn.disabled = false;
     startBtn.textContent = "START (ERROR)";
-    $("loadHint").textContent = "Promiseが落ちた。DEBUGを開いて原因を見て。";
+    $("loadHint").textContent = "Promiseが落ちた。DEBUGを見る。";
   });
 
-  // ====== Optional: unregister SW on debug (GitHub PagesでLOADING事故対策) ======
   async function maybeUnregisterSW() {
     if (!CONFIG.UNREGISTER_SW_ON_DEBUG || !debugOn) return;
     if (!("serviceWorker" in navigator)) return;
@@ -164,15 +153,14 @@
     for (const r of regs) await r.unregister();
   }
 
-  // ====== Matter.js setup ======
+  // ====== Matter ======
   const Engine = Matter.Engine,
         Render = Matter.Render,
         Runner = Matter.Runner,
         Bodies = Matter.Bodies,
         Composite = Matter.Composite,
         Events = Matter.Events,
-        Body = Matter.Body,
-        Vertices = Matter.Vertices;
+        Body = Matter.Body;
 
   let engine, render, runner;
   let w = innerWidth, h = innerHeight;
@@ -182,49 +170,36 @@
   let gameActive = false;
   let score = 0;
 
-  // shape cache
-  const assets = []; // { texUrl, maskUrl, meta, verts, imgW, imgH, spriteScale, spriteOffset }
+  // assets: { spriteUrl, verts, meta, spriteScale }
+  const assets = [];
 
-  // ====== Helpers ======
-  function assetUrl(path) {
-    // cache buster (重要: GitHub Pages + SWで古い画像を掴むと詰む)
-    return `${path}?v=${encodeURIComponent(CONFIG.BUILD_ID)}`;
+  function assetUrl(path) { return `${path}?v=${encodeURIComponent(CONFIG.BUILD_ID)}`; }
+
+  function createCanvas(w, h) {
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    return c;
   }
 
-  function buildAssetList() {
-    const list = [];
-    for (let i = 1; i <= CONFIG.COUNT; i++) {
-      const tex = assetUrl(`${CONFIG.TEX_DIR}/${i}.png`);
-      const mask = assetUrl(`${CONFIG.MASK_DIR}/${i}.png`);
-      list.push({ i, tex, mask });
-    }
-    return list;
-  }
+  function cropTextureToDataURL(texImg, meta) {
+    // meta.cropX/Y/W/H は SRC座標（px）
+    const cw = Math.max(2, Math.round(meta.cropW));
+    const ch = Math.max(2, Math.round(meta.cropH));
+    const cx = Math.round(meta.cropX);
+    const cy = Math.round(meta.cropY);
 
-  function createGround() {
-    if (ground) Composite.remove(engine.world, ground);
-    w = innerWidth; h = innerHeight;
-    const groundY = h - CONFIG.GROUND_Y_OFFSET;
-    const groundW = w * CONFIG.GROUND_W_RATIO;
-    ground = Bodies.rectangle(w / 2, groundY, groundW, 20, {
-      isStatic: true,
-      label: "Ground",
-      render: { fillStyle: "#8b4513" },
-      friction: 1.0
-    });
-    Composite.add(engine.world, ground);
+    const c = createCanvas(cw, ch);
+    const ctx = c.getContext("2d");
+    ctx.clearRect(0,0,cw,ch);
+    ctx.drawImage(texImg, cx, cy, cw, ch, 0, 0, cw, ch);
+
+    // dataURL（同一オリジン前提。GitHub PagesならOK）
+    return c.toDataURL("image/png");
   }
 
   function initPhysics() {
-    if (!window.Matter) throw new Error("Matter.js not loaded");
-    if (!window.decomp) bootLog("[WARN] poly-decomp not loaded (concave may fail)");
-    // Matter needs decomp to decompose concave polygons
-    if (window.decomp && Matter && Matter.Common && Matter.Common.setDecomp) {
-      Matter.Common.setDecomp(window.decomp);
-    } else {
-      // fallback: Matter.js also checks window.decomp
-      window.decomp = window.decomp || window.decomp;
-    }
+    bootLog(`[LIB] Matter=${!!window.Matter} decomp=${!!window.decomp} ShapeExtract=${!!window.ShapeExtract}`);
+    if (window.decomp && Matter.Common?.setDecomp) Matter.Common.setDecomp(window.decomp);
 
     engine = Engine.create();
     render = Render.create({
@@ -235,16 +210,16 @@
         height: h,
         background: "#f5f5f5",
         wireframes: false,
-        showAngleIndicator: false,
         pixelRatio: devicePixelRatio || 1
       }
     });
     Render.run(render);
+
     runner = Runner.create();
     Runner.run(runner, engine);
 
     createGround();
-    Render.lookAt(render, { min: { x: 0, y: 0 }, max: { x: w, y: h } });
+    Render.lookAt(render, { min:{x:0,y:0}, max:{x:w,y:h} });
 
     Events.on(engine, "beforeUpdate", updateLoop);
 
@@ -253,27 +228,36 @@
       render.canvas.width = w;
       render.canvas.height = h;
       createGround();
-      Render.lookAt(render, { min: { x: 0, y: render.bounds.min.y }, max: { x: w, y: render.bounds.min.y + h } });
     });
+  }
+
+  function createGround() {
+    if (ground) Composite.remove(engine.world, ground);
+    w = innerWidth; h = innerHeight;
+    const groundY = h - CONFIG.GROUND_Y_OFFSET;
+    const groundW = w * CONFIG.GROUND_W_RATIO;
+    ground = Bodies.rectangle(w/2, groundY, groundW, 20, {
+      isStatic: true,
+      label: "Ground",
+      render: { fillStyle:"#8b4513" },
+      friction: 1.0
+    });
+    Composite.add(engine.world, ground);
   }
 
   function updateLoop() {
     if (!gameActive) return;
 
-    // gameover: dropped bodies go below screen
     const bodies = Composite.allBodies(engine.world);
     const deadLine = (render.bounds.min.y + h) * CONFIG.DEADLINE_EXTRA;
 
     for (const b of bodies) {
       if (b.label === "Pintxo" && b !== current) {
-        if (b.position.y > deadLine) {
-          gameOver();
-          return;
-        }
+        if (b.position.y > deadLine) { gameOver(); return; }
       }
     }
 
-    // camera follow top
+    // camera follow
     let highestY = ground.position.y;
     let hasStack = false;
     for (const b of bodies) {
@@ -281,14 +265,13 @@
         if (b.position.y < highestY) { highestY = b.position.y; hasStack = true; }
       }
     }
-
     let targetTopY = 0;
     if (hasStack) targetTopY = highestY - (h * 0.55);
     if (targetTopY > 0) targetTopY = 0;
 
     const curTop = render.bounds.min.y;
     const nextTop = curTop + (targetTopY - curTop) * 0.06;
-    Render.lookAt(render, { min: { x: 0, y: nextTop }, max: { x: w, y: nextTop + h } });
+    Render.lookAt(render, { min:{x:0,y:nextTop}, max:{x:w,y:nextTop+h} });
   }
 
   function calcScore(body) {
@@ -297,66 +280,47 @@
     scoreVal.textContent = String(score);
   }
 
-  // ====== Spawn ======
   function pickAsset() {
     return assets[Math.floor(Math.random() * assets.length)];
   }
 
   function spawn() {
     if (!gameActive) return;
-    if (!assets.length) {
-      bootLog("[FATAL] no assets loaded");
-      gameOver();
-      return;
-    }
+    if (!assets.length) { bootLog("[FATAL] no assets"); gameOver(); return; }
 
     const a = pickAsset();
-    const spawnX = w / 2;
+
+    const spawnX = w/2;
     const spawnY = render.bounds.min.y + 120;
 
-    const spriteScale = a.spriteScale;
-    const xOffset = a.spriteOffset?.x ?? 0.5;
-    const yOffset = a.spriteOffset?.y ?? 0.5;
+    const scaledVerts = a.verts.map(v => ({ x: v.x * a.spriteScale, y: v.y * a.spriteScale }));
 
-    const commonOpts = {
+    const body = Bodies.fromVertices(spawnX, spawnY, [scaledVerts], {
       label: "Pintxo",
       restitution: 0.05,
       friction: 0.9,
       frictionAir: 0.02,
       render: {
         sprite: {
-          texture: a.texUrl,
-          xScale: spriteScale,
-          yScale: spriteScale,
-          xOffset,
-          yOffset
+          texture: a.spriteUrl,
+          xScale: a.spriteScale,
+          yScale: a.spriteScale,
+          xOffset: a.meta.spriteOffset.x,
+          yOffset: a.meta.spriteOffset.y
         }
       }
-    };
-
-    let body = null;
-
-    if (a.verts && a.verts.length >= 8) {
-      // scale verts to match sprite scale (verts are centered at centroid in image px)
-      const scaled = a.verts.map(v => ({ x: v.x * spriteScale, y: v.y * spriteScale }));
-
-      body = Bodies.fromVertices(spawnX, spawnY, [scaled], commonOpts, true);
-
-      if (!body) {
-        bootLog(`[WARN] fromVertices returned null -> RECT fallback for ${a.texUrl}`);
-      }
-    }
+    }, true);
 
     if (!body) {
-      // RECT fallback (should be rare; debug will tell why)
-      const rw = (a.imgW || 80) * spriteScale * 0.9;
-      const rh = (a.imgH || 60) * spriteScale * 0.9;
-      body = Bodies.rectangle(spawnX, spawnY, rw, rh, commonOpts);
-      body.__forcedRect = true;
+      bootLog(`[WARN] fromVertices null -> RECT fallback (should not happen)`);
+      return;
     }
 
-    // debug draw collider outline (optional)
-    if (debugOn && CONFIG.DRAW_COLLIDER_WIREFRAME) {
+    if (CONFIG.HIT_INSET !== 1) {
+      Body.scale(body, CONFIG.HIT_INSET, CONFIG.HIT_INSET);
+    }
+
+    if (debugOn && CONFIG.DRAW_COLLIDER_OUTLINE) {
       body.render.strokeStyle = "rgba(0,255,0,0.9)";
       body.render.lineWidth = 2;
     }
@@ -366,16 +330,11 @@
     isDropping = false;
     Composite.add(engine.world, body);
 
-    // show last meta in debug
     if (debugOn) {
       bootLog("---- SPAWN ----");
-      bootLog(`tex: ${a.texUrl}`);
-      bootLog(`mask: ${a.maskUrl || "-"}`);
-      bootLog(`fallback: ${a.meta?.fallback ? "true" : "false"} reason: ${a.meta?.reason || "-"}`);
-      bootLog(`verts: ${a.meta?.vertsCount ?? 0} solidRatio: ${a.meta?.solidRatio?.toFixed?.(3) ?? "-"}`);
-      bootLog(`spriteScale: ${spriteScale.toFixed(3)} offset: (${xOffset.toFixed(3)}, ${yOffset.toFixed(3)})`);
-      if (current.__forcedRect) bootLog("[RECT] forced rect collider");
-      dbgPrint(bootLogs);
+      bootLog(`src: ${a.meta.srcW}x${a.meta.srcH} crop: ${a.meta.cropW}x${a.meta.cropH}`);
+      bootLog(`solidRatio: ${a.meta.solidRatio.toFixed(3)} verts:${a.meta.vertsCount} offset:(${a.meta.spriteOffset.x.toFixed(3)},${a.meta.spriteOffset.y.toFixed(3)})`);
+      bootLog(`spriteScale:${a.spriteScale.toFixed(3)} hitInset:${CONFIG.HIT_INSET}`);
     }
   }
 
@@ -391,7 +350,6 @@
     Body.setStatic(current, false);
     const dropped = current;
 
-    // settle wait (タイムアウトも付けるので止まらない)
     const t0 = performance.now();
     const check = () => {
       if (!gameActive) return;
@@ -409,7 +367,7 @@
     requestAnimationFrame(check);
   }
 
-  // ====== Controls ======
+  // controls
   const hold = (el, fn) => {
     let t = null;
     const start = (e) => { e.preventDefault(); fn(); t = setInterval(fn, 50); };
@@ -423,16 +381,14 @@
   };
 
   function bindControls() {
-    const left = $("left"), right = $("right"), rot = $("rot"), dropBtn = $("drop");
-    hold(left, () => move(-1));
-    hold(right, () => move(1));
-    rot.addEventListener("click", rotate);
-    rot.addEventListener("touchstart", (e) => { e.preventDefault(); rotate(); }, { passive:false });
-    dropBtn.addEventListener("click", drop);
-    dropBtn.addEventListener("touchstart", (e) => { e.preventDefault(); drop(); }, { passive:false });
+    hold($("left"), () => move(-1));
+    hold($("right"), () => move(1));
+    $("rot").addEventListener("click", rotate);
+    $("rot").addEventListener("touchstart", (e)=>{ e.preventDefault(); rotate(); }, { passive:false });
+    $("drop").addEventListener("click", drop);
+    $("drop").addEventListener("touchstart", (e)=>{ e.preventDefault(); drop(); }, { passive:false });
   }
 
-  // ====== Game flow ======
   function startGame() {
     title.classList.add("hidden");
     gameover.classList.add("hidden");
@@ -446,7 +402,7 @@
     gameActive = true;
 
     createGround();
-    Render.lookAt(render, { min: { x: 0, y: 0 }, max: { x: w, y: h } });
+    Render.lookAt(render, { min:{x:0,y:0}, max:{x:w,y:h} });
 
     spawn();
   }
@@ -459,76 +415,71 @@
   }
 
   retryBtn.addEventListener("click", startGame);
+  startBtn.addEventListener("click", startGame);
 
-  // ====== LOADER (ここが今回の本丸：絶対に固まらない) ======
   async function preloadAssets() {
     bootLog(`[BOOT] debugOn=${debugOn}`);
     await maybeUnregisterSW();
 
-    // sanity checks
-    bootLog(`[LIB] Matter=${!!window.Matter} decomp=${!!window.decomp} ShapeExtract=${!!window.ShapeExtract}`);
-
-    const list = buildAssetList();
     const logger = [];
+    let fail = 0;
 
-    let okCount = 0, failCount = 0;
+    for (let i = 1; i <= CONFIG.COUNT; i++) {
+      const texUrl = assetUrl(`${CONFIG.TEX_DIR}/${i}.png`);
+      const maskUrl = CONFIG.USE_MASK_IF_EXISTS ? assetUrl(`${CONFIG.MASK_DIR}/${i}.png`) : null;
 
-    for (const item of list) {
-      const texUrl = item.tex;
-      const maskUrl = CONFIG.USE_MASK_IF_EXISTS ? item.mask : null;
-
-      // load texture first (必須)
       let texImg;
       try {
         texImg = await ShapeExtract.loadImage(texUrl, 8000);
       } catch (e) {
-        failCount++;
-        bootLog(`[ASSET NG] tex missing: ${texUrl} (${e.message})`);
+        fail++;
+        bootLog(`[ASSET NG] tex missing #${i}: ${e.message}`);
         continue;
       }
 
-      // extract from mask if exists, else from texture alpha
       const res = await ShapeExtract.extract({
         srcUrl: texUrl,
-        maskUrl: maskUrl,
+        maskUrl,
         sample: CONFIG.SHAPE.sample,
         alphaThreshold: CONFIG.SHAPE.alphaThreshold,
         dilateIters: CONFIG.SHAPE.dilateIters,
         minSolidRatio: CONFIG.SHAPE.minSolidRatio,
-        simplifyEps: CONFIG.SHAPE.simplifyEps,
         maxVerts: CONFIG.SHAPE.maxVerts,
         minVerts: CONFIG.SHAPE.minVerts,
         timeoutMs: CONFIG.SHAPE.timeoutMs,
+        cropPadRatio: CONFIG.SHAPE.cropPadRatio,
+        cropPadMinPx: CONFIG.SHAPE.cropPadMinPx,
+        cropPadMaxPx: CONFIG.SHAPE.cropPadMaxPx,
         logger
       });
 
-      // sprite scale: fit max dimension to TARGET_MAX_PX
-      const iw = texImg.naturalWidth || texImg.width;
-      const ih = texImg.naturalHeight || texImg.height;
-      const spriteScale = CONFIG.TARGET_MAX_PX / Math.max(iw, ih);
+      if (res.meta.fallback || !res.verts) {
+        fail++;
+        bootLog(`[ASSET NG] #${i} fallback=${res.meta.fallback} reason=${res.meta.reason}`);
+        continue;
+      }
+
+      // ★ここが本命：cropしたテクスチャをspriteに使う（透明余白が消える）
+      const spriteUrl = cropTextureToDataURL(texImg, res.meta);
+
+      // spriteScaleは「crop後サイズ」に合わせる（重要）
+      const spriteScale = CONFIG.TARGET_MAX_PX / Math.max(res.meta.cropW, res.meta.cropH);
 
       assets.push({
-        texUrl,
-        maskUrl,
-        meta: res.meta,
+        spriteUrl,
         verts: res.verts,
-        imgW: iw,
-        imgH: ih,
-        spriteScale,
-        spriteOffset: res.meta?.spriteOffset || { x: 0.5, y: 0.5 }
+        meta: res.meta,
+        spriteScale
       });
 
-      okCount++;
-      bootLog(`[ASSET OK] #${item.i} fallback=${res.meta.fallback ? "true" : "false"} verts=${res.meta.vertsCount} solid=${res.meta.solidRatio.toFixed(3)} used=${res.meta.used}`);
-      dbgPrint(bootLogs);
+      bootLog(`[ASSET OK] #${i} used=${res.meta.used} solid=${res.meta.solidRatio.toFixed(3)} verts=${res.meta.vertsCount} crop=${res.meta.cropW}x${res.meta.cropH}`);
     }
 
-    // show summary
-    bootLog(`[DONE] assets=${assets.length}/${CONFIG.COUNT} fail=${failCount}`);
-    dbgPrint(bootLogs);
+    bootLog(`[DONE] assets=${assets.length}/${CONFIG.COUNT} fail=${fail}`);
+    dbgText.textContent = bootLogs.join("\n");
 
-    if (assets.length === 0) {
-      $("loadHint").textContent = "画像が1枚も読めてない。img/ とファイル名を確認。";
+    if (!assets.length) {
+      $("loadHint").textContent = "1枚も読めてない。img/ と mask/ のパス確認。";
       startBtn.disabled = false;
       startBtn.textContent = "START (NO ASSET)";
       return;
@@ -536,12 +487,10 @@
 
     startBtn.disabled = false;
     startBtn.textContent = "START";
-    $("loadHint").textContent = debugOn ? "DEBUGにロード結果が出ています" : "準備完了";
+    $("loadHint").textContent = debugOn ? "ロード結果はDEBUGに表示中" : "準備完了";
   }
 
-  // ====== Boot ======
-  startBtn.addEventListener("click", startGame);
-
+  // boot
   bindControls();
   initPhysics();
   preloadAssets();
