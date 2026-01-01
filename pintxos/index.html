@@ -5,12 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Pintxos Tower</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/poly-decomp@0.3.0/build/decomp.min.js"></script>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background-color: #f0f0f0; font-family: sans-serif; touch-action: none; }
         canvas { display: block; position: fixed; top: 0; left: 0; z-index: 0; }
         #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
         #score-board { position: absolute; top: 20px; left: 20px; font-size: 24px; font-weight: bold; color: #333; text-shadow: 2px 2px 0px white; }
-        /* ボタンの位置と高さ */
+        /* 操作ボタンの位置調整 */
         #controls { position: absolute; bottom: 30px; left: 0; width: 100%; height: 90px; display: flex; justify-content: center; align-items: center; gap: 20px; pointer-events: auto; }
         .control-btn { width: 60px; height: 60px; background: rgba(255,255,255,0.9); border: 2px solid #888; border-radius: 50%; font-size: 24px; cursor: pointer; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 5px rgba(0,0,0,0.2); user-select: none; -webkit-user-select: none; }
         .control-btn:active { background: #ccc; transform: translateY(2px); }
@@ -64,7 +65,8 @@
           Bodies = Matter.Bodies,
           Composite = Matter.Composite,
           Events = Matter.Events,
-          Body = Matter.Body;
+          Body = Matter.Body,
+          Vertices = Matter.Vertices;
 
     let engine, render, runner;
     let ground;
@@ -83,6 +85,7 @@
 
     function init() {
         engine = Engine.create();
+        
         render = Render.create({
             element: document.body,
             engine: engine,
@@ -90,7 +93,7 @@
                 width: w,
                 height: h,
                 background: '#f0f0f0',
-                wireframes: false,
+                wireframes: false, // 画像モード
                 pixelRatio: 1
             }
         });
@@ -108,20 +111,21 @@
         });
     }
 
-    // ★修正: 土台の作成
+    // ★土台の設定（小さく、高く）
     function createGround() {
         if(ground) Composite.remove(engine.world, ground);
         
-        // 位置：下から150px（ボタンと被らない高さ）
-        const groundY = h - 150; 
-        // サイズ：幅は画面の60%、高さは30px
-        const groundWidth = w * 0.6;
-        const groundHeight = 30;
-
-        ground = Bodies.rectangle(w/2, groundY, groundWidth, groundHeight, { 
+        // 高さ: 下から180px（さらに上げてボタン回避）
+        const groundY = h - 180; 
+        // 幅: 画面の30%（さらに小さく）
+        const groundWidth = w * 0.3;
+        
+        // 厚み: 20px
+        ground = Bodies.rectangle(w/2, groundY, groundWidth, 20, { 
             isStatic: true,
             label: 'Ground',
-            render: { fillStyle: '#8b4513' }
+            render: { fillStyle: '#8b4513' },
+            friction: 1.0 // 滑りにくくする
         });
         Composite.add(engine.world, ground);
     }
@@ -156,24 +160,50 @@
         const spawnY = render.bounds.min.y + 100;
         const spawnX = w / 2;
 
-        // ★微調整: 円の半径を40pxから38pxへ少し小さく
-        currentPintxo = Bodies.circle(spawnX, spawnY, 38, { 
+        // ★重要：透過画像のシェイプに近づける処理
+        // 100x100pxの正方形ではなく、「横長の六角形」のような形を定義します。
+        // これにより、画像の四隅の透明な部分が当たり判定から除外されます。
+        
+        // 頂点データ（0-100の範囲で定義）
+        // 中心(50,50)付近に実体がある想定で、四隅を削った形
+        const arrowSets = [
+            { x: 15, y: 20 }, // 左上
+            { x: 85, y: 20 }, // 右上
+            { x: 100, y: 50 }, // 右端
+            { x: 85, y: 80 }, // 右下
+            { x: 15, y: 80 }, // 左下
+            { x: 0,  y: 50 }  // 左端
+        ];
+
+        // 頂点から物体を作成
+        currentPintxo = Bodies.fromVertices(spawnX, spawnY, [arrowSets], {
             label: 'Pintxo',
-            restitution: 0.1,
-            friction: 0.5,
+            restitution: 0.1, // 跳ね返りすぎない
+            friction: 0.8,    // よく止まるように
             render: {
                 sprite: {
                     texture: imgPath,
+                    // 画像の表示倍率（0.8倍 = 80px相当）
                     xScale: 0.8,
                     yScale: 0.8
                 }
             }
-        });
+        }, true);
+
+        // ★さらに重要：当たり判定のサイズ調整（肉抜き）
+        // 画像は0.8倍で表示していますが、当たり判定はさらに小さく(0.55倍)します。
+        // これにより、画像のフチ（透明部分）が重なり合うようになります。
         
-        Body.setStatic(currentPintxo, true);
-        currentPintxo.isDropped = false;
-        Composite.add(engine.world, currentPintxo);
-        isDropping = false;
+        if(currentPintxo) {
+            // 当たり判定のスケールを縮小
+            // 試行錯誤の結果、0.55〜0.6くらいが「浮いて見えない」ベストな値です
+            Body.scale(currentPintxo, 0.65, 0.65); 
+
+            Body.setStatic(currentPintxo, true);
+            currentPintxo.isDropped = false;
+            Composite.add(engine.world, currentPintxo);
+            isDropping = false;
+        }
     }
 
     function updateLoop() {
@@ -210,7 +240,6 @@
              Render.lookAt(render, { min: { x: 0, y: 0 }, max: { x: w, y: h } });
         }
 
-        // ★修正: ゲームオーバーラインを土台の位置基準に変更
         const deadLine = ground.position.y + h;
         allBodies.forEach(b => {
             if (b.label === 'Pintxo' && b !== currentPintxo) {
