@@ -1,8 +1,8 @@
-/* shape-extract.js
- * Debug-first contour extraction for Matter.js Bodies.fromVertices
- * - Loads mask or texture, extracts boundary by marching squares
- * - Returns verts centered at centroid + sprite offsets
- * - Never hangs: has timeouts, returns structured debug meta
+/* shape-extract.js (dbg-v2-crop)
+ * - Extract contour from mask/alpha
+ * - Compute bbox of solid pixels
+ * - Return verts in CROPPED coordinate space + centroid-based spriteOffset
+ * - Never hangs (timeouts), returns meta for debugging
  */
 (function (global) {
   "use strict";
@@ -10,11 +10,7 @@
   const ShapeExtract = {};
 
   function nowMs() { return (performance && performance.now) ? performance.now() : Date.now(); }
-
-  function logPush(logger, msg) {
-    if (!logger) return;
-    logger.push({ t: nowMs(), msg });
-  }
+  function logPush(logger, msg) { if (logger) logger.push({ t: nowMs(), msg }); }
 
   function withTimeout(promise, ms, label) {
     let t;
@@ -40,56 +36,7 @@
     return c;
   }
 
-  function getBinaryFromImage(img, opts) {
-    const {
-      sample = 160,             // downsample size (max dimension)
-      alphaThreshold = 16,      // 0-255 (use alpha channel)
-      dilateIters = 1,          // inflate silhouette
-      invert = false,           // if mask is inverted
-      logger = null
-    } = opts || {};
-
-    const iw = img.naturalWidth || img.width;
-    const ih = img.naturalHeight || img.height;
-    if (!iw || !ih) throw new Error("invalid image size");
-
-    const scale = sample / Math.max(iw, ih);
-    const dw = Math.max(16, Math.round(iw * scale));
-    const dh = Math.max(16, Math.round(ih * scale));
-
-    const canvas = createCanvas(dw, dh);
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    ctx.clearRect(0, 0, dw, dh);
-    ctx.drawImage(img, 0, 0, dw, dh);
-
-    const im = ctx.getImageData(0, 0, dw, dh).data;
-
-    // binary grid at pixel centers: 1=solid, 0=empty
-    const bin = new Uint8Array(dw * dh);
-    let solid = 0;
-    for (let y = 0; y < dh; y++) {
-      for (let x = 0; x < dw; x++) {
-        const i = (y * dw + x) * 4;
-        const a = im[i + 3]; // alpha
-        let v = (a >= alphaThreshold) ? 1 : 0;
-        if (invert) v = v ? 0 : 1;
-        bin[y * dw + x] = v;
-        solid += v;
-      }
-    }
-
-    // optional dilate to reduce "gap" caused by thin masks / antialias
-    if (dilateIters > 0) {
-      dilate(bin, dw, dh, dilateIters);
-    }
-
-    logPush(logger, `binary dw=${dw} dh=${dh} solid=${solid}/${dw * dh}`);
-
-    return { bin, dw, dh, iw, ih };
-  }
-
   function dilate(bin, w, h, iters) {
-    // 8-neighborhood dilation
     let src = bin;
     for (let k = 0; k < iters; k++) {
       const dst = new Uint8Array(w * h);
@@ -113,7 +60,7 @@
     bin.set(src);
   }
 
-  // Marching squares segments table (corners: tl=1,tr=2,br=4,bl=8)
+  // Marching squares (tl=1,tr=2,br=4,bl=8)
   const MS_TABLE = {
     0: [],
     1: [["top", "left"]],
@@ -134,7 +81,6 @@
   };
 
   function edgePoint(edge, x, y) {
-    // cell at (x,y), size 1
     switch (edge) {
       case "left": return [x, y + 0.5];
       case "right": return [x + 1, y + 0.5];
@@ -143,16 +89,10 @@
       default: return [x + 0.5, y + 0.5];
     }
   }
-
-  function keyPt(p) {
-    // stable hash
-    return `${p[0].toFixed(3)},${p[1].toFixed(3)}`;
-  }
+  function keyPt(p) { return `${p[0].toFixed(3)},${p[1].toFixed(3)}`; }
 
   function buildContourFromBinary(bin, w, h, logger) {
     const segs = [];
-
-    // iterate cells (w-1 x h-1)
     for (let y = 0; y < h - 1; y++) {
       for (let x = 0; x < w - 1; x++) {
         const tl = bin[y * w + x] ? 1 : 0;
@@ -162,23 +102,15 @@
         const idx = (tl ? 1 : 0) | (tr ? 2 : 0) | (br ? 4 : 0) | (bl ? 8 : 0);
         const pairs = MS_TABLE[idx];
         if (!pairs || pairs.length === 0) continue;
-
         for (const [e1, e2] of pairs) {
-          const p1 = edgePoint(e1, x, y);
-          const p2 = edgePoint(e2, x, y);
-          segs.push([p1, p2]);
+          segs.push([edgePoint(e1, x, y), edgePoint(e2, x, y)]);
         }
       }
     }
-
     logPush(logger, `marchingSquares segs=${segs.length}`);
+    if (segs.length < 10) return { contour: null, reason: "contour too short", segs: segs.length };
 
-    if (segs.length < 10) {
-      return { contour: null, reason: "contour too short", segs: segs.length };
-    }
-
-    // chain segments into loops
-    const adj = new Map(); // pointKey -> array of neighbor point arrays
+    const adj = new Map();
     function addEdge(a, b) {
       const ka = keyPt(a), kb = keyPt(b);
       if (!adj.has(ka)) adj.set(ka, []);
@@ -192,11 +124,10 @@
     const loops = [];
 
     for (const [a, b] of segs) {
-      const ekey = keyPt(a) + "->" + keyPt(b);
-      const ekey2 = keyPt(b) + "->" + keyPt(a);
-      if (visited.has(ekey) || visited.has(ekey2)) continue;
+      const e1 = keyPt(a) + "->" + keyPt(b);
+      const e2 = keyPt(b) + "->" + keyPt(a);
+      if (visited.has(e1) || visited.has(e2)) continue;
 
-      // start a walk
       const loop = [];
       let curr = a;
       let prev = null;
@@ -206,7 +137,6 @@
         const neighbors = adj.get(keyPt(curr)) || [];
         if (neighbors.length === 0) break;
 
-        // pick next that is not prev if possible
         let next = neighbors[0];
         if (prev && neighbors.length > 1) {
           const kprev = keyPt(prev);
@@ -214,42 +144,29 @@
           if (cand) next = cand;
         }
 
-        // mark edge visited
         visited.add(keyPt(curr) + "->" + keyPt(next));
         prev = curr;
         curr = next;
-
-        // closed?
         if (keyPt(curr) === keyPt(a)) break;
       }
 
       if (loop.length > 8) loops.push(loop);
     }
 
-    if (loops.length === 0) {
-      return { contour: null, reason: "no loop built", segs: segs.length };
-    }
-
-    // choose largest loop by length
+    if (!loops.length) return { contour: null, reason: "no loop built", segs: segs.length };
     loops.sort((p, q) => q.length - p.length);
-    const contour = loops[0];
-
-    return { contour, reason: "-", segs: segs.length, loops: loops.length };
+    return { contour: loops[0], reason: "-", segs: segs.length, loops: loops.length };
   }
 
   function rdpSimplify(points, eps) {
     if (points.length < 6) return points;
 
-    // distance from point to segment
     function distToSeg(p, a, b) {
       const x = p[0], y = p[1];
       const x1 = a[0], y1 = a[1];
       const x2 = b[0], y2 = b[1];
       const dx = x2 - x1, dy = y2 - y1;
-      if (dx === 0 && dy === 0) {
-        const ddx = x - x1, ddy = y - y1;
-        return Math.hypot(ddx, ddy);
-      }
+      if (dx === 0 && dy === 0) return Math.hypot(x - x1, y - y1);
       const t = ((x - x1) * dx + (y - y1) * dy) / (dx * dx + dy * dy);
       const tt = Math.max(0, Math.min(1, t));
       const px = x1 + tt * dx, py = y1 + tt * dy;
@@ -277,7 +194,6 @@
   }
 
   function polygonAreaCentroid(pts) {
-    // pts: [ [x,y], ... ] (closed or open)
     let area = 0, cx = 0, cy = 0;
     const n = pts.length;
     for (let i = 0; i < n; i++) {
@@ -290,7 +206,6 @@
     }
     area *= 0.5;
     if (Math.abs(area) < 1e-6) {
-      // fallback: average
       let sx = 0, sy = 0;
       for (const p of pts) { sx += p[0]; sy += p[1]; }
       return { area: 0, cx: sx / n, cy: sy / n };
@@ -301,16 +216,75 @@
   }
 
   function ensureCCW(pts) {
-    // Matter likes clockwise? Actually both are ok; keep CCW stable
     let sum = 0;
     for (let i = 0; i < pts.length; i++) {
-      const a = pts[i];
-      const b = pts[(i + 1) % pts.length];
+      const a = pts[i], b = pts[(i + 1) % pts.length];
       sum += (b[0] - a[0]) * (b[1] + a[1]);
     }
-    // sum > 0 => clockwise in this formula
     if (sum > 0) pts.reverse();
     return pts;
+  }
+
+  function computeBBox(bin, w, h) {
+    let minX = w, minY = h, maxX = -1, maxY = -1;
+    let solid = 0;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const v = bin[y * w + x];
+        solid += v;
+        if (!v) continue;
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+    }
+    if (maxX < 0) return { ok: false, solid, minX:0, minY:0, maxX:0, maxY:0 };
+    return { ok: true, solid, minX, minY, maxX, maxY };
+  }
+
+  // Draw src/mask to a downsample canvas based on SRC size (重要: 座標を統一する)
+  function makeBinaryFromImages(srcImg, maskImg, opts) {
+    const {
+      sample = 160,
+      alphaThreshold = 16,
+      dilateIters = 1,
+      invert = false,
+      logger = null
+    } = opts || {};
+
+    const iw = srcImg.naturalWidth || srcImg.width;
+    const ih = srcImg.naturalHeight || srcImg.height;
+    if (!iw || !ih) throw new Error("invalid src image size");
+
+    const scale = sample / Math.max(iw, ih);
+    const dw = Math.max(16, Math.round(iw * scale));
+    const dh = Math.max(16, Math.round(ih * scale));
+
+    const canvas = createCanvas(dw, dh);
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.clearRect(0, 0, dw, dh);
+
+    // maskがあればそれを、無ければsrcのalphaを使う
+    const useImg = maskImg || srcImg;
+    ctx.drawImage(useImg, 0, 0, dw, dh);
+
+    const im = ctx.getImageData(0, 0, dw, dh).data;
+    const bin = new Uint8Array(dw * dh);
+    let solid = 0;
+    for (let i = 0, p = 0; p < dw * dh; p++, i += 4) {
+      const a = im[i + 3];
+      let v = (a >= alphaThreshold) ? 1 : 0;
+      if (invert) v = v ? 0 : 1;
+      bin[p] = v;
+      solid += v;
+    }
+
+    if (dilateIters > 0) dilate(bin, dw, dh, dilateIters);
+
+    logPush(logger, `binary(dw=${dw},dh=${dh}) solid=${solid}/${dw*dh}`);
+
+    return { bin, dw, dh, iw, ih };
   }
 
   ShapeExtract.extract = async function extractShape(options) {
@@ -319,53 +293,52 @@
     const timeoutMs = opts.timeoutMs || 12000;
 
     const srcUrl = opts.srcUrl;
+    const maskUrl = opts.maskUrl || null;
     if (!srcUrl) throw new Error("srcUrl is required");
 
-    const maskUrl = opts.maskUrl || null;
-
     const meta = {
-      version: "dbg-v1",
-      srcUrl,
-      maskUrl,
-      used: null,            // "mask" | "src"
+      version: "dbg-v2-crop",
+      srcUrl, maskUrl,
+      used: null,
       fallback: false,
       reason: "-",
       vertsCount: 0,
-      parts: 1,
       solidRatio: 0,
+      srcW: 0, srcH: 0,
+      maskW: 0, maskH: 0,
+      cropX: 0, cropY: 0, cropW: 0, cropH: 0,
       spriteOffset: { x: 0.5, y: 0.5 },
-      bbox: { w: 0, h: 0 },
       downsample: { w: 0, h: 0 }
     };
-
-    logPush(logger, `extract start src=${srcUrl} mask=${maskUrl}`);
 
     let srcImg = null;
     let maskImg = null;
 
     try {
-      // Load texture always
       srcImg = await loadImage(srcUrl, timeoutMs);
-      // Try load mask, but don't hang if missing
+      meta.srcW = srcImg.naturalWidth || srcImg.width;
+      meta.srcH = srcImg.naturalHeight || srcImg.height;
+
       if (maskUrl) {
         try {
           maskImg = await loadImage(maskUrl, Math.min(timeoutMs, 6000));
+          meta.maskW = maskImg.naturalWidth || maskImg.width;
+          meta.maskH = maskImg.naturalHeight || maskImg.height;
         } catch (e) {
-          logPush(logger, `mask load failed -> use src alpha: ${e.message}`);
+          logPush(logger, `mask load fail -> use src alpha (${e.message})`);
           maskImg = null;
         }
       }
     } catch (e) {
       meta.fallback = true;
       meta.reason = `texture load fail: ${e.message}`;
-      return { ok: false, meta, verts: null, logger };
+      return { ok: false, meta, verts: null, logger, srcImg: null };
     }
 
-    const imgForBinary = (maskImg || srcImg);
     meta.used = maskImg ? "mask" : "src";
 
     try {
-      const binary = getBinaryFromImage(imgForBinary, {
+      const binary = makeBinaryFromImages(srcImg, maskImg, {
         sample: opts.sample || 160,
         alphaThreshold: opts.alphaThreshold ?? 16,
         dilateIters: opts.dilateIters ?? 1,
@@ -376,21 +349,41 @@
       meta.downsample.w = binary.dw;
       meta.downsample.h = binary.dh;
 
-      meta.bbox.w = binary.iw;
-      meta.bbox.h = binary.ih;
+      const bb = computeBBox(binary.bin, binary.dw, binary.dh);
+      meta.solidRatio = bb.solid / (binary.dw * binary.dh);
 
-      // solid ratio
-      let solid = 0;
-      for (let i = 0; i < binary.bin.length; i++) solid += binary.bin[i];
-      meta.solidRatio = solid / binary.bin.length;
-
-      // If almost empty -> fallback
-      if (meta.solidRatio < (opts.minSolidRatio ?? 0.02)) {
+      if (!bb.ok || meta.solidRatio < (opts.minSolidRatio ?? 0.02)) {
         meta.fallback = true;
         meta.reason = `too empty solidRatio=${meta.solidRatio.toFixed(3)}`;
         return { ok: true, meta, verts: null, logger, srcImg };
       }
 
+      // bbox in SRC pixel coords
+      const sx = binary.iw / binary.dw;
+      const sy = binary.ih / binary.dh;
+
+      let x0 = bb.minX * sx;
+      let y0 = bb.minY * sy;
+      let x1 = (bb.maxX + 1) * sx;
+      let y1 = (bb.maxY + 1) * sy;
+
+      // pad bbox (隙間対策＋アンチエイリアス吸収)
+      const padRatio = opts.cropPadRatio ?? 0.06; // 6% くらい盛る
+      const padMin = opts.cropPadMinPx ?? 2;
+      const padMax = opts.cropPadMaxPx ?? 24;
+      const pad = Math.max(padMin, Math.min(padMax, Math.round(Math.max(x1 - x0, y1 - y0) * padRatio)));
+
+      x0 = Math.max(0, Math.floor(x0 - pad));
+      y0 = Math.max(0, Math.floor(y0 - pad));
+      x1 = Math.min(binary.iw, Math.ceil(x1 + pad));
+      y1 = Math.min(binary.ih, Math.ceil(y1 + pad));
+
+      const cropW = Math.max(2, x1 - x0);
+      const cropH = Math.max(2, y1 - y0);
+
+      meta.cropX = x0; meta.cropY = y0; meta.cropW = cropW; meta.cropH = cropH;
+
+      // contour
       const built = buildContourFromBinary(binary.bin, binary.dw, binary.dh, logger);
       if (!built.contour) {
         meta.fallback = true;
@@ -398,13 +391,12 @@
         return { ok: true, meta, verts: null, logger, srcImg };
       }
 
-      // Convert contour points (grid coords) -> image pixel coords
-      const sx = binary.iw / binary.dw;
-      const sy = binary.ih / binary.dh;
-      let pts = built.contour.map(p => [p[0] * sx, p[1] * sy]);
+      // contour points -> SRC coords -> CROP coords
+      let pts = built.contour.map(p => [p[0] * sx - x0, p[1] * sy - y0]);
 
-      // Simplify
-      const eps = opts.simplifyEps ?? Math.max(binary.iw, binary.ih) * 0.01;
+      // simplify
+      const autoEps = Math.max(cropW, cropH) * 0.01;
+      const eps = (opts.simplifyEps == null) ? autoEps : opts.simplifyEps;
       pts = rdpSimplify(pts, eps);
 
       // clamp vertex count
@@ -422,19 +414,19 @@
 
       pts = ensureCCW(pts);
 
-      // centroid in image coords
+      // centroid in CROP coords
       const c = polygonAreaCentroid(pts);
       const cx = c.cx, cy = c.cy;
 
-      meta.spriteOffset.x = cx / binary.iw;
-      meta.spriteOffset.y = cy / binary.ih;
+      meta.spriteOffset.x = cx / cropW;
+      meta.spriteOffset.y = cy / cropH;
 
-      // Center vertices around centroid -> body center at centroid
-      let verts = pts.map(p => ({ x: p[0] - cx, y: p[1] - cy }));
+      // center vertices at centroid (so body.position = centroid)
+      const verts = pts.map(p => ({ x: p[0] - cx, y: p[1] - cy }));
 
       meta.vertsCount = verts.length;
-      meta.reason = "-";
       meta.fallback = false;
+      meta.reason = "-";
 
       return { ok: true, meta, verts, logger, srcImg };
     } catch (e) {
