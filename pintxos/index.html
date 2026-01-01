@@ -2,559 +2,551 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Pintxos Tower</title>
 
+  <!-- libs -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/poly-decomp@0.3.0/build/decomp.min.js"></script>
 
-  <style>
-    body{margin:0;overflow:hidden;background:#f0f0f0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;touch-action:none}
-    canvas{display:block;position:fixed;top:0;left:0}
-    #ui-layer{position:absolute;inset:0;pointer-events:none;z-index:10}
-    #score-board{position:absolute;top:20px;left:20px;font-size:44px;font-weight:900;color:#333;text-shadow:2px 2px 0 #fff}
-    #controls{position:absolute;bottom:30px;left:0;width:100%;height:120px;display:flex;justify-content:center;align-items:center;gap:26px;pointer-events:auto}
-    .control-btn{width:90px;height:90px;background:rgba(255,255,255,.95);border:2px solid #888;border-radius:50%;font-size:34px;box-shadow:0 6px 10px rgba(0,0,0,.25);user-select:none;-webkit-user-select:none}
-    .control-btn:active{background:#ddd;transform:translateY(2px)}
-    #btn-drop{width:120px;height:120px;background:#ff4757;color:#fff;border:none;font-size:44px}
-    .overlay{position:absolute;inset:0;background:rgba(255,255,255,.95);display:flex;flex-direction:column;justify-content:center;align-items:center;z-index:20;pointer-events:auto}
-    .hidden{display:none!important}
-    button.primary-btn{padding:15px 40px;font-size:18px;background:#2ecc71;color:#fff;border:none;border-radius:30px;margin-top:15px;cursor:pointer}
-    #ranking-list{padding:0;list-style:none;margin-top:10px}
-    #ranking-list li{margin:5px 0;border-bottom:1px solid #ddd;padding:5px;width:240px;display:flex;justify-content:space-between}
+  <!-- shape extractor -->
+  <script src="./shape-extract.js"></script>
 
-    /* Debug UI */
-    #debugBtn{
-      position:absolute;top:18px;right:18px;z-index:30;pointer-events:auto;
-      background:#222;color:#fff;border:none;border-radius:999px;padding:10px 14px;
-      box-shadow:0 8px 16px rgba(0,0,0,.25);font-weight:800;display:flex;gap:8px;align-items:center
-    }
-    #debugLayer{z-index:25;pointer-events:none;display:none}
-    #debugCard{
-      position:absolute;top:70px;right:18px;z-index:30;pointer-events:none;
-      background:rgba(25,25,25,.86);color:#fff;border-radius:18px;padding:14px 14px;
-      width:280px;white-space:pre-wrap;font:12px/1.35 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
-      display:none
-    }
+  <style>
+    body { margin:0; overflow:hidden; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:#f5f5f5; touch-action:none; }
+    canvas { position:fixed; inset:0; display:block; }
+    #ui { position:fixed; inset:0; pointer-events:none; }
+    #score { position:fixed; top:18px; left:18px; font-weight:900; font-size:40px; color:#222; text-shadow: 0 2px 0 rgba(255,255,255,.8); }
+    #controls { position:fixed; left:0; right:0; bottom:22px; display:flex; gap:18px; justify-content:center; align-items:center; pointer-events:auto; }
+    .btn { width:74px; height:74px; border-radius:999px; border:2px solid rgba(0,0,0,.25); background:rgba(255,255,255,.92); box-shadow:0 10px 20px rgba(0,0,0,.15); font-size:30px; display:grid; place-items:center; user-select:none; -webkit-user-select:none; }
+    .btn:active { transform: translateY(2px); filter: brightness(.95); }
+    #drop { width:110px; height:110px; background:#ff4d57; color:white; border:none; font-size:38px; }
+
+    .overlay { position:fixed; inset:0; background:rgba(255,255,255,.96); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; z-index:50; }
+    .hidden { display:none !important; }
+    .title { font-size:40px; font-weight:900; letter-spacing:.02em; }
+    .sub { color:#444; }
+    .pill { padding:14px 44px; border-radius:999px; border:none; font-size:20px; font-weight:800; background:#2ecc71; color:white; }
+    .pill:disabled { background:#bfe9cc; color:#fff; }
+    .small { font-size:12px; color:#666; }
+
+    /* debug */
+    #dbgBtn { position:fixed; top:16px; right:16px; z-index:80; pointer-events:auto; background:#222; color:#fff; border:none; border-radius:999px; padding:10px 14px; font-weight:800; box-shadow:0 10px 20px rgba(0,0,0,.2); }
+    #dbgPanel { position:fixed; top:64px; right:16px; width:min(420px, calc(100vw - 32px)); max-height:70vh; overflow:auto; z-index:80; background:rgba(20,20,20,.92); color:#fff; border-radius:16px; padding:14px; display:none; pointer-events:auto; box-shadow:0 20px 40px rgba(0,0,0,.25); }
+    #dbgPanel pre { white-space:pre-wrap; word-break:break-word; font-size:12px; margin:0; }
+    .dbgRow { border-top:1px solid rgba(255,255,255,.12); padding-top:10px; margin-top:10px; }
+    .ok { color:#7CFC9A; }
+    .ng { color:#FF9AA2; }
   </style>
 </head>
 <body>
 
-  <div id="ui-layer">
-    <div id="score-board">SCORE: <span id="score-val">0</span></div>
+  <div id="ui">
+    <div id="score">SCORE: <span id="scoreVal">0</span></div>
+
     <div id="controls" class="hidden">
-      <button class="control-btn" id="btn-left">⬅️</button>
-      <button class="control-btn" id="btn-rotate">🔄</button>
-      <button class="control-btn" id="btn-right">➡️</button>
-      <button class="control-btn" id="btn-drop">⬇️</button>
+      <div class="btn" id="left">⬅️</div>
+      <div class="btn" id="rot">🔄</div>
+      <div class="btn" id="right">➡️</div>
+      <div class="btn" id="drop">⬇️</div>
     </div>
   </div>
 
-  <button id="debugBtn">🐞 DEBUG</button>
-  <div id="debugCard"></div>
-  <canvas id="debugLayer"></canvas>
+  <button id="dbgBtn">🐞 DEBUG</button>
+  <div id="dbgPanel"><pre id="dbgText"></pre></div>
 
-  <div id="title-screen" class="overlay">
-    <h1>Pintxos Tower</h1>
-    <p>画像を積み上げろ！</p>
-    <button class="primary-btn" id="startBtn">START</button>
+  <div id="title" class="overlay">
+    <div class="title">Pintxos Tower</div>
+    <div class="sub">積み上げろ。落としたら負け。</div>
+    <button class="pill" id="startBtn" disabled>LOADING...</button>
+    <div class="small" id="loadHint">ロード中…（debug=1 で詳細表示）</div>
   </div>
 
-  <div id="game-over-screen" class="overlay hidden">
-    <h1>GAME OVER</h1>
-    <p>Score: <span id="final-score">0</span></p>
-    <div id="input-area">
-      <input type="text" id="player-name" placeholder="名前を入力" maxlength="8" style="padding:10px;font-size:16px;text-align:center">
-      <br>
-      <button class="primary-btn" id="saveBtn">ランキング登録</button>
-      <br>
-      <button style="margin-top:15px;background:none;border:none;text-decoration:underline;color:#666" id="retryBtn">リトライ</button>
-    </div>
-    <div id="ranking-area" class="hidden">
-      <h3>ランキング</h3>
-      <ul id="ranking-list"></ul>
-      <button class="primary-btn" id="againBtn">もう一度</button>
-    </div>
+  <div id="gameover" class="overlay hidden">
+    <div class="title">GAME OVER</div>
+    <div class="sub">Score: <span id="finalScore">0</span></div>
+    <button class="pill" id="retryBtn">RETRY</button>
   </div>
 
-  <script type="module">
-    import { ShapeExtractor } from "./shape-extract.js";
+<script>
+(() => {
+  "use strict";
 
-    const {
-      Engine, Render, Runner, Bodies, Composite, Events, Body, Vertices
-    } = Matter;
+  // ====== CONFIG (ここだけ触ればOK) ======
+  const CONFIG = {
+    BUILD_ID: "2026-01-01-DBG1",       // キャッシュ殺し用
+    COUNT: 11,
+    TEX_DIR: "./img",
+    MASK_DIR: "./mask",
+    USE_MASK_IF_EXISTS: true,          // maskが無ければ透過PNG(alpha)から抽出
+    UNREGISTER_SW_ON_DEBUG: true,      // PWA/SWがLOADING事故起こすのでデバッグ時解除
+    DEBUG_DEFAULT: (new URLSearchParams(location.search).get("debug") === "1"),
 
-    // === EDIT POINT #1: SETTINGS（ここだけ触れば調整できる） ===
-    const SETTINGS = {
-      imagesCount: 11,
-      imgDir: "img",
-      maskDir: "mask",
-      targetMaxPx: 120,     // 見た目の最大サイズ（当たり判定も同倍率）
-      scaleClamp: { min: 0.85, max: 2.40 },
-      gravityY: 1.0,
-      groundFromBottom: 180,  // 土台の高さ（下から）
-      groundWidthRatio: 0.70, // 土台の横幅（画面幅の割合）
-      groundThickness: 20,
+    // Shape extraction tuning
+    SHAPE: {
+      sample: 160,              // downsample（大きいほど精度↑だが重い）
+      alphaThreshold: 16,       // 透過境界（低いほど輪郭が太りやすい）
+      dilateIters: 1,           // 膨張（隙間対策）
+      minSolidRatio: 0.02,      // これ未満ならfallback（細すぎ）
+      simplifyEps: null,        // nullなら自動
+      maxVerts: 64,
+      minVerts: 12,
+      timeoutMs: 12000
+    },
 
-      moveStep: 7,
-      rotateStep: Math.PI / 14,
+    // Sprite size (見た目の最大辺 px)
+    TARGET_MAX_PX: 150,
 
-      // 当たり判定の「詰まり具合」：隙間が気になるなら 0.97〜0.99 を推奨
-      maskInset: 0.98,
+    // physics
+    MOVE_STEP: 7,
+    ROT_STEP: Math.PI / 8,
+    GROUND_Y_OFFSET: 180,
+    GROUND_W_RATIO: 0.30,
+    DEADLINE_EXTRA: 1.2, // 画面下判定の余裕
 
-      // ゲームオーバー判定：下に消えたら終わり（表示領域の下+この余白）
-      fallOutMargin: 260,
+    // debug visuals
+    DRAW_COLLIDER_WIREFRAME: true
+  };
 
-      // 物理精度（積みゲーは上げたほうがマシ）
-      positionIterations: 12,
-      velocityIterations: 10,
-    };
+  // ====== UI ======
+  const $ = (id) => document.getElementById(id);
+  const startBtn = $("startBtn");
+  const title = $("title");
+  const gameover = $("gameover");
+  const scoreVal = $("scoreVal");
+  const finalScore = $("finalScore");
+  const retryBtn = $("retryBtn");
 
-    // === EDIT POINT #2: ASSETS（ファイル名ルール） ===
-    const TEX = [];
-    const MASK = [];
-    for (let i = 1; i <= SETTINGS.imagesCount; i++) {
-      TEX.push(`${SETTINGS.imgDir}/${i}.png`);
-      MASK.push(`${SETTINGS.maskDir}/${i}.png`);
+  const dbgBtn = $("dbgBtn");
+  const dbgPanel = $("dbgPanel");
+  const dbgText = $("dbgText");
+  let debugOn = CONFIG.DEBUG_DEFAULT;
+
+  function dbgPrint(lines) {
+    dbgText.textContent = lines.join("\n");
+  }
+  function dbgShow(show) {
+    dbgPanel.style.display = show ? "block" : "none";
+  }
+  dbgBtn.addEventListener("click", () => {
+    debugOn = !debugOn;
+    dbgShow(debugOn);
+  });
+  dbgShow(debugOn);
+
+  // ====== Global error hooks (LOADINGで死ぬ原因を画面に出す) ======
+  const bootLogs = [];
+  function bootLog(s) {
+    bootLogs.push(s);
+    if (debugOn) dbgPrint(bootLogs);
+  }
+  window.addEventListener("error", (e) => {
+    bootLog(`[FATAL] ${e.message}`);
+    if (e.error && e.error.stack) bootLog(e.error.stack);
+    startBtn.disabled = false;
+    startBtn.textContent = "START (ERROR)";
+    $("loadHint").textContent = "エラーで初期化停止。DEBUGを開いて原因を見て。";
+  });
+  window.addEventListener("unhandledrejection", (e) => {
+    bootLog(`[FATAL] unhandledrejection: ${(e.reason && e.reason.message) ? e.reason.message : String(e.reason)}`);
+    if (e.reason && e.reason.stack) bootLog(e.reason.stack);
+    startBtn.disabled = false;
+    startBtn.textContent = "START (ERROR)";
+    $("loadHint").textContent = "Promiseが落ちた。DEBUGを開いて原因を見て。";
+  });
+
+  // ====== Optional: unregister SW on debug (GitHub PagesでLOADING事故対策) ======
+  async function maybeUnregisterSW() {
+    if (!CONFIG.UNREGISTER_SW_ON_DEBUG || !debugOn) return;
+    if (!("serviceWorker" in navigator)) return;
+    const regs = await navigator.serviceWorker.getRegistrations();
+    if (regs.length) bootLog(`[SW] found ${regs.length} registrations -> unregister (debug)`);
+    for (const r of regs) await r.unregister();
+  }
+
+  // ====== Matter.js setup ======
+  const Engine = Matter.Engine,
+        Render = Matter.Render,
+        Runner = Matter.Runner,
+        Bodies = Matter.Bodies,
+        Composite = Matter.Composite,
+        Events = Matter.Events,
+        Body = Matter.Body,
+        Vertices = Matter.Vertices;
+
+  let engine, render, runner;
+  let w = innerWidth, h = innerHeight;
+  let ground;
+  let current = null;
+  let isDropping = false;
+  let gameActive = false;
+  let score = 0;
+
+  // shape cache
+  const assets = []; // { texUrl, maskUrl, meta, verts, imgW, imgH, spriteScale, spriteOffset }
+
+  // ====== Helpers ======
+  function assetUrl(path) {
+    // cache buster (重要: GitHub Pages + SWで古い画像を掴むと詰む)
+    return `${path}?v=${encodeURIComponent(CONFIG.BUILD_ID)}`;
+  }
+
+  function buildAssetList() {
+    const list = [];
+    for (let i = 1; i <= CONFIG.COUNT; i++) {
+      const tex = assetUrl(`${CONFIG.TEX_DIR}/${i}.png`);
+      const mask = assetUrl(`${CONFIG.MASK_DIR}/${i}.png`);
+      list.push({ i, tex, mask });
     }
+    return list;
+  }
 
-    // --- engine/render ---
-    let engine, render, runner;
-    let ground;
-    let current = null;
-    let isDropping = false;
-    let gameActive = false;
-    let score = 0;
-    let gameToken = 0;
-
-    let W = window.innerWidth;
-    let H = window.innerHeight;
-
-    // shape extractor
-    const extractor = new ShapeExtractor({
-      alphaThreshold: 8,
-      simplifyEps: 1.2,
-      maxVerts: 80,
-      inset: SETTINGS.maskInset,
-      minArea: 120
+  function createGround() {
+    if (ground) Composite.remove(engine.world, ground);
+    w = innerWidth; h = innerHeight;
+    const groundY = h - CONFIG.GROUND_Y_OFFSET;
+    const groundW = w * CONFIG.GROUND_W_RATIO;
+    ground = Bodies.rectangle(w / 2, groundY, groundW, 20, {
+      isStatic: true,
+      label: "Ground",
+      render: { fillStyle: "#8b4513" },
+      friction: 1.0
     });
+    Composite.add(engine.world, ground);
+  }
 
-    // --- UI ---
-    const $ = (id) => document.getElementById(id);
-    const scoreVal = $("score-val");
-    const titleScreen = $("title-screen");
-    const gameOverScreen = $("game-over-screen");
-    const controls = $("controls");
-    const finalScore = $("final-score");
-    const inputArea = $("input-area");
-    const rankingArea = $("ranking-area");
-    const rankingList = $("ranking-list");
-    const debugBtn = $("debugBtn");
-    const debugLayer = $("debugLayer");
-    const debugCard = $("debugCard");
-
-    // debug draw (never stops)
-    let debug = false;
-
-    function syncDebugCanvasSize() {
-      debugLayer.width = render.canvas.width;
-      debugLayer.height = render.canvas.height;
+  function initPhysics() {
+    if (!window.Matter) throw new Error("Matter.js not loaded");
+    if (!window.decomp) bootLog("[WARN] poly-decomp not loaded (concave may fail)");
+    // Matter needs decomp to decompose concave polygons
+    if (window.decomp && Matter && Matter.Common && Matter.Common.setDecomp) {
+      Matter.Common.setDecomp(window.decomp);
+    } else {
+      // fallback: Matter.js also checks window.decomp
+      window.decomp = window.decomp || window.decomp;
     }
-    function worldToScreen(x, y) {
-      const b = render.bounds;
-      const cw = render.canvas.width;
-      const ch = render.canvas.height;
-      return {
-        x: (x - b.min.x) * (cw / (b.max.x - b.min.x)),
-        y: (y - b.min.y) * (ch / (b.max.y - b.min.y)),
-      };
-    }
-    function drawDebug() {
-      const ctx = debugLayer.getContext("2d");
-      ctx.clearRect(0, 0, debugLayer.width, debugLayer.height);
-      if (!debug) return;
 
-      const bodies = Composite.allBodies(engine.world);
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = "#00ff6a";
+    engine = Engine.create();
+    render = Render.create({
+      element: document.body,
+      engine,
+      options: {
+        width: w,
+        height: h,
+        background: "#f5f5f5",
+        wireframes: false,
+        showAngleIndicator: false,
+        pixelRatio: devicePixelRatio || 1
+      }
+    });
+    Render.run(render);
+    runner = Runner.create();
+    Runner.run(runner, engine);
 
-      for (const b of bodies) {
-        if (b.label !== "Pintxo") continue;
-        const parts = (b.parts && b.parts.length > 1) ? b.parts.slice(1) : [b];
+    createGround();
+    Render.lookAt(render, { min: { x: 0, y: 0 }, max: { x: w, y: h } });
 
-        for (const p of parts) {
-          const vs = p.vertices;
-          if (!vs || vs.length < 3) continue;
-          ctx.beginPath();
-          const p0 = worldToScreen(vs[0].x, vs[0].y);
-          ctx.moveTo(p0.x, p0.y);
-          for (let i = 1; i < vs.length; i++) {
-            const pi = worldToScreen(vs[i].x, vs[i].y);
-            ctx.lineTo(pi.x, pi.y);
-          }
-          ctx.closePath();
-          ctx.stroke();
+    Events.on(engine, "beforeUpdate", updateLoop);
+
+    addEventListener("resize", () => {
+      w = innerWidth; h = innerHeight;
+      render.canvas.width = w;
+      render.canvas.height = h;
+      createGround();
+      Render.lookAt(render, { min: { x: 0, y: render.bounds.min.y }, max: { x: w, y: render.bounds.min.y + h } });
+    });
+  }
+
+  function updateLoop() {
+    if (!gameActive) return;
+
+    // gameover: dropped bodies go below screen
+    const bodies = Composite.allBodies(engine.world);
+    const deadLine = (render.bounds.min.y + h) * CONFIG.DEADLINE_EXTRA;
+
+    for (const b of bodies) {
+      if (b.label === "Pintxo" && b !== current) {
+        if (b.position.y > deadLine) {
+          gameOver();
+          return;
         }
       }
     }
-    function startDebugLoop() {
-      const loop = () => { drawDebug(); requestAnimationFrame(loop); };
-      requestAnimationFrame(loop);
+
+    // camera follow top
+    let highestY = ground.position.y;
+    let hasStack = false;
+    for (const b of bodies) {
+      if (b.label === "Pintxo" && b !== current) {
+        if (b.position.y < highestY) { highestY = b.position.y; hasStack = true; }
+      }
     }
 
-    debugBtn.onclick = () => {
-      debug = !debug;
-      debugLayer.style.display = debug ? "block" : "none";
-      debugCard.style.display = debug ? "block" : "none";
-      syncDebugCanvasSize();
+    let targetTopY = 0;
+    if (hasStack) targetTopY = highestY - (h * 0.55);
+    if (targetTopY > 0) targetTopY = 0;
+
+    const curTop = render.bounds.min.y;
+    const nextTop = curTop + (targetTopY - curTop) * 0.06;
+    Render.lookAt(render, { min: { x: 0, y: nextTop }, max: { x: w, y: nextTop + h } });
+  }
+
+  function calcScore(body) {
+    const diff = ground.position.y - body.position.y;
+    if (diff > 0) score += Math.floor(diff / 10) + 10;
+    scoreVal.textContent = String(score);
+  }
+
+  // ====== Spawn ======
+  function pickAsset() {
+    return assets[Math.floor(Math.random() * assets.length)];
+  }
+
+  function spawn() {
+    if (!gameActive) return;
+    if (!assets.length) {
+      bootLog("[FATAL] no assets loaded");
+      gameOver();
+      return;
+    }
+
+    const a = pickAsset();
+    const spawnX = w / 2;
+    const spawnY = render.bounds.min.y + 120;
+
+    const spriteScale = a.spriteScale;
+    const xOffset = a.spriteOffset?.x ?? 0.5;
+    const yOffset = a.spriteOffset?.y ?? 0.5;
+
+    const commonOpts = {
+      label: "Pintxo",
+      restitution: 0.05,
+      friction: 0.9,
+      frictionAir: 0.02,
+      render: {
+        sprite: {
+          texture: a.texUrl,
+          xScale: spriteScale,
+          yScale: spriteScale,
+          xOffset,
+          yOffset
+        }
+      }
     };
 
-    // --- init ---
-    window.addEventListener("load", init);
+    let body = null;
 
-    function init() {
-      engine = Engine.create();
-      engine.world.gravity.y = SETTINGS.gravityY;
-      engine.positionIterations = SETTINGS.positionIterations;
-      engine.velocityIterations = SETTINGS.velocityIterations;
+    if (a.verts && a.verts.length >= 8) {
+      // scale verts to match sprite scale (verts are centered at centroid in image px)
+      const scaled = a.verts.map(v => ({ x: v.x * spriteScale, y: v.y * spriteScale }));
 
-      render = Render.create({
-        element: document.body,
-        engine,
-        options: {
-          width: W,
-          height: H,
-          background: "#f0f0f0",
-          wireframes: false,
-          pixelRatio: window.devicePixelRatio || 1
-        }
-      });
-      Render.run(render);
+      body = Bodies.fromVertices(spawnX, spawnY, [scaled], commonOpts, true);
 
-      runner = Runner.create();
-      Runner.run(runner, engine);
-
-      createGround();
-      Events.on(engine, "beforeUpdate", updateLoop);
-
-      // debug loop (doesn't rely on afterRender)
-      syncDebugCanvasSize();
-      startDebugLoop();
-
-      window.addEventListener("resize", () => {
-        W = window.innerWidth; H = window.innerHeight;
-        render.canvas.width = W;
-        render.canvas.height = H;
-        Render.lookAt(render, { min:{x:0,y:render.bounds.min.y}, max:{x:W,y:render.bounds.min.y+H} });
-        syncDebugCanvasSize();
-        createGround();
-      });
-
-      // buttons
-      $("startBtn").onclick = () => startGame();
-      $("retryBtn").onclick = () => startGame();
-      $("againBtn").onclick = () => startGame();
-      $("saveBtn").onclick = () => saveScore();
-
-      bindControls();
-    }
-
-    function createGround() {
-      if (ground) Composite.remove(engine.world, ground);
-
-      const groundY = H - SETTINGS.groundFromBottom;
-      const groundW = W * SETTINGS.groundWidthRatio;
-
-      ground = Bodies.rectangle(W / 2, groundY, groundW, SETTINGS.groundThickness, {
-        isStatic: true,
-        label: "Ground",
-        friction: 1.0,
-        render: { fillStyle: "#8b4513" }
-      });
-
-      Composite.add(engine.world, ground);
-    }
-
-    async function startGame() {
-      // UI
-      titleScreen.classList.add("hidden");
-      gameOverScreen.classList.add("hidden");
-      controls.classList.remove("hidden");
-
-      // reset world
-      gameToken++;
-      const myToken = gameToken;
-
-      // remove old handlers to avoid duplicate loops after restart
-      Events.off(engine, "beforeUpdate", updateLoop);
-
-      Composite.clear(engine.world, false);
-      Engine.clear(engine);
-
-      engine = Engine.create();
-      engine.world.gravity.y = SETTINGS.gravityY;
-      engine.positionIterations = SETTINGS.positionIterations;
-      engine.velocityIterations = SETTINGS.velocityIterations;
-
-      render.engine = engine;
-      Runner.stop(runner);
-      runner = Runner.create();
-      Runner.run(runner, engine);
-
-      createGround();
-      Render.lookAt(render, { min: { x: 0, y: 0 }, max: { x: W, y: H } });
-
-      current = null;
-      isDropping = false;
-      gameActive = true;
-      score = 0;
-      scoreVal.textContent = String(score);
-
-      Events.on(engine, "beforeUpdate", updateLoop);
-
-      // prewarm shapes (non-blocking)
-      (async () => {
-        for (let i = 0; i < TEX.length; i++) {
-          if (myToken !== gameToken) return;
-          try { await extractor.load(TEX[i], MASK[i]); } catch {}
-        }
-      })();
-
-      await spawnPintxo(myToken);
-    }
-
-    function gameOver() {
-      if (!gameActive) return;
-      gameActive = false;
-      controls.classList.add("hidden");
-      finalScore.textContent = String(score);
-      gameOverScreen.classList.remove("hidden");
-      inputArea.classList.remove("hidden");
-      rankingArea.classList.add("hidden");
-    }
-
-    function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
-
-    async function spawnPintxo(token) {
-      if (!gameActive || token !== gameToken) return;
-
-      const idx = Math.floor(Math.random() * TEX.length);
-      const texUrl = TEX[idx];
-      const maskUrl = MASK[idx];
-
-      const spawnX = W / 2;
-      const spawnY = render.bounds.min.y + 120;
-
-      let info;
-      try {
-        info = await extractor.load(texUrl, maskUrl);
-      } catch (e) {
-        info = { ok: false, reason: "load fail", imgW:100, imgH:100, bbox:{w:90,h:90}, centroid:{x:50,y:50}, solidRatio:0 };
+      if (!body) {
+        bootLog(`[WARN] fromVertices returned null -> RECT fallback for ${a.texUrl}`);
       }
+    }
 
-      // scale based on visible bbox (not full PNG padding)
-      const base = Math.max(info?.bbox?.w ?? 100, info?.bbox?.h ?? 100);
-      let k = SETTINGS.targetMaxPx / base;
-      k = clamp(k, SETTINGS.scaleClamp.min, SETTINGS.scaleClamp.max);
+    if (!body) {
+      // RECT fallback (should be rare; debug will tell why)
+      const rw = (a.imgW || 80) * spriteScale * 0.9;
+      const rh = (a.imgH || 60) * spriteScale * 0.9;
+      body = Bodies.rectangle(spawnX, spawnY, rw, rh, commonOpts);
+      body.__forcedRect = true;
+    }
 
-      let body = null;
-      let fallback = false;
-      let reason = info?.reason ?? "-";
+    // debug draw collider outline (optional)
+    if (debugOn && CONFIG.DRAW_COLLIDER_WIREFRAME) {
+      body.render.strokeStyle = "rgba(0,255,0,0.9)";
+      body.render.lineWidth = 2;
+    }
 
-      if (info.ok && Array.isArray(info.verts) && info.verts.length >= 10) {
-        const verts = info.verts.map(p => ({ x: p.x * k, y: p.y * k }));
-        // sort clockwise for Matter
-        Vertices.clockwiseSort(verts);
+    Body.setStatic(body, true);
+    current = body;
+    isDropping = false;
+    Composite.add(engine.world, body);
 
-        body = Bodies.fromVertices(spawnX, spawnY, [verts], {
-          label: "Pintxo",
-          restitution: 0.05,
-          friction: 0.95,
-          frictionStatic: 1.0,
-          render: {
-            sprite: {
-              texture: texUrl,
-              xScale: k,
-              yScale: k,
-              // IMPORTANT: align sprite center to polygon (centroid in original image)
-              xOffset: clamp(info.centroid.x / info.imgW, 0, 1),
-              yOffset: clamp(info.centroid.y / info.imgH, 0, 1)
-            }
-          }
-        }, true);
+    // show last meta in debug
+    if (debugOn) {
+      bootLog("---- SPAWN ----");
+      bootLog(`tex: ${a.texUrl}`);
+      bootLog(`mask: ${a.maskUrl || "-"}`);
+      bootLog(`fallback: ${a.meta?.fallback ? "true" : "false"} reason: ${a.meta?.reason || "-"}`);
+      bootLog(`verts: ${a.meta?.vertsCount ?? 0} solidRatio: ${a.meta?.solidRatio?.toFixed?.(3) ?? "-"}`);
+      bootLog(`spriteScale: ${spriteScale.toFixed(3)} offset: (${xOffset.toFixed(3)}, ${yOffset.toFixed(3)})`);
+      if (current.__forcedRect) bootLog("[RECT] forced rect collider");
+      dbgPrint(bootLogs);
+    }
+  }
 
-        if (!body) {
-          fallback = true;
-          reason = "fromVertices returned null";
-        }
+  function move(dir) {
+    if (current && !isDropping) Body.translate(current, { x: dir * CONFIG.MOVE_STEP, y: 0 });
+  }
+  function rotate() {
+    if (current && !isDropping) Body.rotate(current, CONFIG.ROT_STEP);
+  }
+  function drop() {
+    if (!current || isDropping) return;
+    isDropping = true;
+    Body.setStatic(current, false);
+    const dropped = current;
+
+    // settle wait (タイムアウトも付けるので止まらない)
+    const t0 = performance.now();
+    const check = () => {
+      if (!gameActive) return;
+      const v = dropped.velocity;
+      const speed = Math.hypot(v.x, v.y);
+      const ang = Math.abs(dropped.angularVelocity);
+
+      if ((speed < 0.15 && ang < 0.15) || (performance.now() - t0 > 2200)) {
+        calcScore(dropped);
+        spawn();
       } else {
-        fallback = true;
+        requestAnimationFrame(check);
+      }
+    };
+    requestAnimationFrame(check);
+  }
+
+  // ====== Controls ======
+  const hold = (el, fn) => {
+    let t = null;
+    const start = (e) => { e.preventDefault(); fn(); t = setInterval(fn, 50); };
+    const end = (e) => { e.preventDefault(); if (t) clearInterval(t); t = null; };
+    el.addEventListener("touchstart", start, { passive:false });
+    el.addEventListener("touchend", end);
+    el.addEventListener("touchcancel", end);
+    el.addEventListener("mousedown", start);
+    el.addEventListener("mouseup", end);
+    el.addEventListener("mouseleave", end);
+  };
+
+  function bindControls() {
+    const left = $("left"), right = $("right"), rot = $("rot"), dropBtn = $("drop");
+    hold(left, () => move(-1));
+    hold(right, () => move(1));
+    rot.addEventListener("click", rotate);
+    rot.addEventListener("touchstart", (e) => { e.preventDefault(); rotate(); }, { passive:false });
+    dropBtn.addEventListener("click", drop);
+    dropBtn.addEventListener("touchstart", (e) => { e.preventDefault(); drop(); }, { passive:false });
+  }
+
+  // ====== Game flow ======
+  function startGame() {
+    title.classList.add("hidden");
+    gameover.classList.add("hidden");
+    $("controls").classList.remove("hidden");
+
+    Composite.clear(engine.world, false);
+    Engine.clear(engine);
+
+    score = 0;
+    scoreVal.textContent = "0";
+    gameActive = true;
+
+    createGround();
+    Render.lookAt(render, { min: { x: 0, y: 0 }, max: { x: w, y: h } });
+
+    spawn();
+  }
+
+  function gameOver() {
+    gameActive = false;
+    $("controls").classList.add("hidden");
+    finalScore.textContent = String(score);
+    gameover.classList.remove("hidden");
+  }
+
+  retryBtn.addEventListener("click", startGame);
+
+  // ====== LOADER (ここが今回の本丸：絶対に固まらない) ======
+  async function preloadAssets() {
+    bootLog(`[BOOT] debugOn=${debugOn}`);
+    await maybeUnregisterSW();
+
+    // sanity checks
+    bootLog(`[LIB] Matter=${!!window.Matter} decomp=${!!window.decomp} ShapeExtract=${!!window.ShapeExtract}`);
+
+    const list = buildAssetList();
+    const logger = [];
+
+    let okCount = 0, failCount = 0;
+
+    for (const item of list) {
+      const texUrl = item.tex;
+      const maskUrl = CONFIG.USE_MASK_IF_EXISTS ? item.mask : null;
+
+      // load texture first (必須)
+      let texImg;
+      try {
+        texImg = await ShapeExtract.loadImage(texUrl, 8000);
+      } catch (e) {
+        failCount++;
+        bootLog(`[ASSET NG] tex missing: ${texUrl} (${e.message})`);
+        continue;
       }
 
-      if (fallback) {
-        const bw = Math.max(18, (info?.bbox?.w ?? 90) * k);
-        const bh = Math.max(18, (info?.bbox?.h ?? 60) * k);
-
-        body = Bodies.rectangle(spawnX, spawnY, bw, bh, {
-          label: "Pintxo",
-          restitution: 0.05,
-          friction: 0.95,
-          frictionStatic: 1.0,
-          render: {
-            sprite: {
-              texture: texUrl,
-              xScale: k,
-              yScale: k,
-              xOffset: clamp((info?.centroid?.x ?? (info.imgW*0.5)) / (info?.imgW ?? 100), 0, 1),
-              yOffset: clamp((info?.centroid?.y ?? (info.imgH*0.5)) / (info?.imgH ?? 100), 0, 1)
-            }
-          }
-        });
-      }
-
-      Body.setStatic(body, true);   // 操作中は静止
-      body.isDropped = false;
-
-      Composite.add(engine.world, body);
-      current = body;
-      isDropping = false;
-
-      // debug card
-      if (debug) {
-        debugCard.textContent =
-`Spawn
-tex: ${texUrl}
-mask: ${maskUrl}
-ShapeExtract: v10
-
-fallback: ${fallback}
-reason: ${reason}
-verts: ${info?.verts?.length ?? 0} parts: ${body?.parts?.length ?? 0}
-solidRatio: ${(info?.solidRatio ?? 0).toFixed(3)}
-spriteScale: ${k.toFixed(3)}
-offset: (${(body.render?.sprite?.xOffset ?? 0.5).toFixed(3)}, ${(body.render?.sprite?.yOffset ?? 0.5).toFixed(3)})
-hasDecomp: ${!!window.decomp}
-meta: ${JSON.stringify(info?.meta ?? {})}`;
-      }
-    }
-
-    function updateLoop() {
-      if (!gameActive) return;
-
-      // camera follow: keep stack in view
-      const bodies = Composite.allBodies(engine.world);
-      let minY = ground.position.y;
-      for (const b of bodies) {
-        if (b.label === "Pintxo" && b !== current) {
-          if (b.position.y < minY) minY = b.position.y;
-        }
-      }
-      // update score = max height reached (stable, no timeout)
-      const height = Math.max(0, Math.floor((ground.position.y - minY) / 10));
-      if (height > score) { score = height; scoreVal.textContent = String(score); }
-
-      const targetTopY = Math.min(0, minY - (H * 0.55));
-      const curTopY = render.bounds.min.y;
-      const newY = curTopY + (targetTopY - curTopY) * 0.06;
-
-      Render.lookAt(render, { min:{x:0,y:newY}, max:{x:W,y:newY+H} });
-
-      // game over: if any dropped Pintxo goes below bottom of view
-      const deadY = render.bounds.max.y + SETTINGS.fallOutMargin;
-      for (const b of bodies) {
-        if (b.label !== "Pintxo") continue;
-        if (b === current) continue;
-        if (b.position.y > deadY) {
-          gameOver();
-          break;
-        }
-      }
-    }
-
-    // --- controls ---
-    function bindControls() {
-      const btnL = $("btn-left");
-      const btnR = $("btn-right");
-      const btnRot = $("btn-rotate");
-      const btnDrop = $("btn-drop");
-
-      const hold = (btn, action) => {
-        let t = null;
-        const start = (e) => { e.preventDefault(); action(); t = setInterval(action, 50); };
-        const end = (e) => { e.preventDefault(); if (t) clearInterval(t); t = null; };
-        btn.addEventListener("touchstart", start, { passive:false });
-        btn.addEventListener("touchend", end);
-        btn.addEventListener("touchcancel", end);
-        btn.addEventListener("mousedown", start);
-        btn.addEventListener("mouseup", end);
-        btn.addEventListener("mouseleave", end);
-      };
-
-      hold(btnL, () => move(-1));
-      hold(btnR, () => move( 1));
-
-      btnRot.addEventListener("click", rotate);
-      btnRot.addEventListener("touchstart", (e)=>{e.preventDefault(); rotate();},{passive:false});
-
-      btnDrop.addEventListener("click", drop);
-      btnDrop.addEventListener("touchstart", (e)=>{e.preventDefault(); drop();},{passive:false});
-    }
-
-    function move(dir) {
-      if (!current || isDropping) return;
-      Body.translate(current, { x: dir * SETTINGS.moveStep, y: 0 });
-
-      // clamp inside screen-ish
-      const pad = 10;
-      const minX = pad;
-      const maxX = W - pad;
-      const x = clamp(current.position.x, minX, maxX);
-      Body.setPosition(current, { x, y: current.position.y });
-    }
-
-    function rotate() {
-      if (!current || isDropping) return;
-      Body.rotate(current, SETTINGS.rotateStep);
-    }
-
-    async function drop() {
-      if (!current || isDropping) return;
-      isDropping = true;
-
-      Body.setStatic(current, false);
-      current.isDropped = true;
-
-      // spawn next after a short delay (avoid overlap)
-      const token = gameToken;
-      const prev = current;
-      current = null;
-
-      setTimeout(async () => {
-        if (!gameActive || token !== gameToken) return;
-        await spawnPintxo(token);
-      }, 650);
-    }
-
-    // --- ranking ---
-    function saveScore() {
-      const name = ($("player-name").value || "名無し").slice(0, 8);
-      const data = JSON.parse(localStorage.getItem("pintxosRank") || "[]");
-      data.push({ name, score });
-      data.sort((a,b)=>b.score-a.score);
-      localStorage.setItem("pintxosRank", JSON.stringify(data.slice(0, 5)));
-      showRank();
-    }
-    function showRank() {
-      const data = JSON.parse(localStorage.getItem("pintxosRank") || "[]");
-      rankingList.innerHTML = "";
-      data.forEach((d,i)=>{
-        const li = document.createElement("li");
-        li.innerHTML = `<span>${i+1}.${d.name}</span><span>${d.score}</span>`;
-        rankingList.appendChild(li);
+      // extract from mask if exists, else from texture alpha
+      const res = await ShapeExtract.extract({
+        srcUrl: texUrl,
+        maskUrl: maskUrl,
+        sample: CONFIG.SHAPE.sample,
+        alphaThreshold: CONFIG.SHAPE.alphaThreshold,
+        dilateIters: CONFIG.SHAPE.dilateIters,
+        minSolidRatio: CONFIG.SHAPE.minSolidRatio,
+        simplifyEps: CONFIG.SHAPE.simplifyEps,
+        maxVerts: CONFIG.SHAPE.maxVerts,
+        minVerts: CONFIG.SHAPE.minVerts,
+        timeoutMs: CONFIG.SHAPE.timeoutMs,
+        logger
       });
-      inputArea.classList.add("hidden");
-      rankingArea.classList.remove("hidden");
+
+      // sprite scale: fit max dimension to TARGET_MAX_PX
+      const iw = texImg.naturalWidth || texImg.width;
+      const ih = texImg.naturalHeight || texImg.height;
+      const spriteScale = CONFIG.TARGET_MAX_PX / Math.max(iw, ih);
+
+      assets.push({
+        texUrl,
+        maskUrl,
+        meta: res.meta,
+        verts: res.verts,
+        imgW: iw,
+        imgH: ih,
+        spriteScale,
+        spriteOffset: res.meta?.spriteOffset || { x: 0.5, y: 0.5 }
+      });
+
+      okCount++;
+      bootLog(`[ASSET OK] #${item.i} fallback=${res.meta.fallback ? "true" : "false"} verts=${res.meta.vertsCount} solid=${res.meta.solidRatio.toFixed(3)} used=${res.meta.used}`);
+      dbgPrint(bootLogs);
     }
-  </script>
+
+    // show summary
+    bootLog(`[DONE] assets=${assets.length}/${CONFIG.COUNT} fail=${failCount}`);
+    dbgPrint(bootLogs);
+
+    if (assets.length === 0) {
+      $("loadHint").textContent = "画像が1枚も読めてない。img/ とファイル名を確認。";
+      startBtn.disabled = false;
+      startBtn.textContent = "START (NO ASSET)";
+      return;
+    }
+
+    startBtn.disabled = false;
+    startBtn.textContent = "START";
+    $("loadHint").textContent = debugOn ? "DEBUGにロード結果が出ています" : "準備完了";
+  }
+
+  // ====== Boot ======
+  startBtn.addEventListener("click", startGame);
+
+  bindControls();
+  initPhysics();
+  preloadAssets();
+
+})();
+</script>
 </body>
 </html>
