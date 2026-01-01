@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pintxos Tower</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; background-color: #f0f0f0; font-family: 'Helvetica', sans-serif; touch-action: none; }
+        #game-container { position: relative; width: 100vw; height: 100vh; }
+        canvas { display: block; width: 100%; height: 100%; }
+        
+        /* UI Overlay */
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; }
+        
+        /* Title Screen */
+        #title-screen, #game-over-screen { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(255, 255, 255, 0.9); display: flex; flex-direction: column; 
+            align-items: center; justify-content: center; pointer-events: auto; z-index: 10;
+        }
+        h1 { margin: 0 0 20px 0; color: #333; font-size: 2em; }
+        button.btn { padding: 15px 40px; font-size: 1.2em; background: #ff6b6b; color: white; border: none; border-radius: 30px; cursor: pointer; box-shadow: 0 4px 0 #d45050; }
+        button.btn:active { transform: translateY(4px); box-shadow: none; }
+
+        /* HUD */
+        #score-board { padding: 20px; font-size: 1.5em; color: #333; font-weight: bold; text-shadow: 1px 1px 0 #fff; }
+        
+        /* Controls */
+        #controls { pointer-events: auto; display: none; padding-bottom: 30px; width: 100%; justify-content: center; gap: 10px; }
+        .control-btn { 
+            width: 70px; height: 70px; border-radius: 50%; border: none; 
+            background: rgba(255, 255, 255, 0.8); font-size: 24px; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1); touch-action: manipulation;
+        }
+        .control-btn:active { background: #ddd; }
+        #btn-drop { background: #ff6b6b; color: white; width: 90px; height: 90px; font-weight: bold;}
+
+        /* Ranking */
+        #ranking-list { list-style: none; padding: 0; text-align: center; width: 80%; max-width: 300px; }
+        #ranking-list li { border-bottom: 1px solid #ccc; padding: 5px; display: flex; justify-content: space-between; }
+        input#player-name { padding: 10px; font-size: 1em; border: 1px solid #ccc; border-radius: 5px; margin-bottom: 10px; width: 70%; }
+        
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <div id="ui-layer">
+        <div id="score-board">SCORE: <span id="score-val">0</span></div>
+        <div id="controls">
+            <button class="control-btn" id="btn-left">⬅️</button>
+            <button class="control-btn" id="btn-rotate">🔄</button>
+            <button class="control-btn" id="btn-right">➡️</button>
+            <button class="control-btn" id="btn-drop">⬇️</button>
+        </div>
+    </div>
+
+    <div id="title-screen">
+        <h1>Pintxos Tower</h1>
+        <p>ピンチョスを積み上げろ！</p>
+        <button class="btn" onclick="startGame()">START</button>
+    </div>
+
+    <div id="game-over-screen" class="hidden">
+        <h1>GAME OVER</h1>
+        <p>Score: <span id="final-score">0</span></p>
+        
+        <div id="input-area">
+            <input type="text" id="player-name" placeholder="名前を入力" maxlength="8">
+            <button class="btn" style="padding: 10px 20px; font-size: 1em;" onclick="saveScore()">ランキング登録</button>
+        </div>
+        <div id="ranking-area" class="hidden">
+            <h3>Top 5 Ranking</h3>
+            <ul id="ranking-list"></ul>
+            <button class="btn" style="margin-top:20px;" onclick="resetGame()">RETRY</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- 初期設定 ---
+    const Engine = Matter.Engine,
+          Render = Matter.Render,
+          Runner = Matter.Runner,
+          Bodies = Matter.Bodies,
+          Composite = Matter.Composite,
+          Events = Matter.Events,
+          Body = Matter.Body;
+
+    // 画像設定
+    const IMAGES = [];
+    for(let i=1; i<=11; i++) IMAGES.push(`./img/${i}.png`);
+
+    let engine, render, runner;
+    let currentPintxo = null;
+    let isDropping = false;
+    let score = 0;
+    let gameActive = false;
+    let ground;
+
+    // スマホ判定
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+    function init() {
+        // エンジン作成
+        engine = Engine.create();
+        
+        // レンダラー作成
+        const container = document.getElementById('game-container');
+        render = Render.create({
+            element: container,
+            engine: engine,
+            options: {
+                width: container.clientWidth,
+                height: container.clientHeight,
+                background: '#f0f0f0',
+                wireframes: false // 画像を表示するためにfalse
+            }
+        });
+
+        // 床（皿）の作成
+        const groundX = container.clientWidth / 2;
+        const groundY = container.clientHeight - 50;
+        ground = Bodies.rectangle(groundX, groundY, 300, 20, { 
+            isStatic: true,
+            render: { fillStyle: '#8b4513' },
+            label: 'Ground'
+        });
+        
+        // 壁（画面外に落ちないようにするためのガイド、落下中は無効化などの処理が必要だが今回はシンプルに皿から落ちたら負けにするので壁はなし）
+
+        Composite.add(engine.world, ground);
+
+        Render.run(render);
+        runner = Runner.create();
+        Runner.run(runner, engine);
+
+        // 更新ごとの処理
+        Events.on(engine, 'beforeUpdate', function() {
+            if (!gameActive) return;
+
+            // カメラ移動（積み上がったら視点を上げる）
+            if (currentPintxo && !currentPintxo.isStatic) {
+                // 落下中はカメラ追従しない
+            } else {
+                // 最も高い位置にあるオブジェクトを探す
+                let allBodies = Composite.allBodies(engine.world);
+                let highestY = ground.position.y;
+                
+                allBodies.forEach(b => {
+                    if (b.label === 'Pintxo' && b.position.y < highestY) {
+                        highestY = b.position.y;
+                    }
+                });
+
+                // 画面上部200pxより上に行ったらカメラを上にずらす
+                const targetY = highestY - 200;
+                const shiftY = (render.bounds.min.y - (targetY - 300)) * 0.05; // スムーズ移動
+                
+                if (render.bounds.min.y > targetY - 300) {
+                     Render.lookAt(render, {
+                        min: { x: 0, y: targetY - 300 },
+                        max: { x: container.clientWidth, y: targetY - 300 + container.clientHeight }
+                    });
+                }
+            }
+
+            // ゲームオーバー判定（画面下の一定ラインを超えたら）
+            let allBodies = Composite.allBodies(engine.world);
+            allBodies.forEach(b => {
+                if (b.label === 'Pintxo' && b.position.y > ground.position.y + 100) {
+                    // 操作中のピンチョス以外が落ちたらゲームオーバー
+                    if (b !== currentPintxo || (b === currentPintxo && b.isDropped)) {
+                        gameOver();
+                    }
+                }
+            });
+        });
+    }
+
+    function startGame() {
+        document.getElementById('title-screen').classList.add('hidden');
+        document.getElementById('controls').style.display = 'flex';
+        document.getElementById('game-over-screen').classList.add('hidden');
+        
+        // リセット
+        Composite.clear(engine.world);
+        Engine.clear(engine);
+        Composite.add(engine.world, ground);
+        
+        // カメラリセット
+        Render.lookAt(render, {
+            min: { x: 0, y: 0 },
+            max: { x: render.canvas.width, y: render.canvas.height }
+        });
+
+        score = 0;
+        updateScore();
+        gameActive = true;
+        
+        spawnPintxo();
+    }
+
+    function spawnPintxo() {
+        if (!gameActive) return;
+
+        // ランダムに画像選択
+        const imgIndex = Math.floor(Math.random() * IMAGES.length);
+        const imgPath = IMAGES[imgIndex];
+        
+        // 出現位置
+        const startX = render.bounds.min.x + (render.bounds.max.x - render.bounds.min.x) / 2;
+        const startY = render.bounds.min.y + 100;
+
+        // ピンチョスの生成
+        // ★重要: 本格的な形状判定には頂点データが必要ですが、
+        // ここでは画像を円形(Circle)または四角(Rectangle)として判定させます。
+        // タワーバトルのような複雑な形状の場合、通常は'vertices'オプションを使います。
+        // 今回は「円形」として近似してプレイしやすくします。
+        
+        currentPintxo = Bodies.circle(startX, startY, 40, { // 半径40px (100px画像の余白考慮)
+            label: 'Pintxo',
+            restitution: 0.1, // 跳ね返り係数
+            friction: 0.5,    // 摩擦
+            density: 0.002,   // 重さ（密度）
+            render: {
+                sprite: {
+                    texture: imgPath,
+                    xScale: 0.8, // 100px画像を少し調整
+                    yScale: 0.8
+                }
+            }
+        });
+
+        // 落下させるまでは重力の影響を受けない（操作モード）
+        Body.setStatic(currentPintxo, true);
+        currentPintxo.isDropped = false;
+
+        Composite.add(engine.world, currentPintxo);
+        isDropping = false;
+    }
+
+    // --- 操作 ---
+    function moveLeft() {
+        if (currentPintxo && !isDropping) {
+            Body.translate(currentPintxo, { x: -10, y: 0 });
+        }
+    }
+    function moveRight() {
+        if (currentPintxo && !isDropping) {
+            Body.translate(currentPintxo, { x: 10, y: 0 });
+        }
+    }
+    function rotatePintxo() {
+        if (currentPintxo && !isDropping) {
+            Body.rotate(currentPintxo, Math.PI / 4); // 45度回転
+        }
+    }
+    function dropPintxo() {
+        if (currentPintxo && !isDropping) {
+            isDropping = true;
+            Body.setStatic(currentPintxo, false); // 物理演算開始
+            currentPintxo.isDropped = true;
+
+            // 次の生成までの待機処理
+            // 静止したか、ある程度時間が経ったら次へ
+            setTimeout(() => {
+                if(gameActive) {
+                    addScore(currentPintxo);
+                    spawnPintxo();
+                }
+            }, 2000); // 2秒後に次を生成（簡易実装）
+        }
+    }
+
+    // ボタンイベント紐付け
+    const btnLeft = document.getElementById('btn-left');
+    const btnRight = document.getElementById('btn-right');
+    const btnRotate = document.getElementById('btn-rotate');
+    const btnDrop = document.getElementById('btn-drop');
+
+    // PC/Mobile両対応のイベントリスナー
+    const addHoldEvent = (btn, action) => {
+        let interval;
+        const start = (e) => { e.preventDefault(); action(); interval = setInterval(action, 100); };
+        const end = (e) => { e.preventDefault(); clearInterval(interval); };
+        
+        btn.addEventListener('mousedown', start);
+        btn.addEventListener('touchstart', start);
+        btn.addEventListener('mouseup', end);
+        btn.addEventListener('touchend', end);
+        btn.addEventListener('mouseleave', end);
+    };
+
+    addHoldEvent(btnLeft, moveLeft);
+    addHoldEvent(btnRight, moveRight);
+    
+    // 回転と落下は単押し
+    btnRotate.addEventListener('click', rotatePintxo);
+    btnRotate.addEventListener('touchstart', (e)=>{e.preventDefault(); rotatePintxo();});
+    
+    btnDrop.addEventListener('click', dropPintxo);
+    btnDrop.addEventListener('touchstart', (e)=>{e.preventDefault(); dropPintxo();});
+
+
+    // --- スコア・ゲームオーバー ---
+    function addScore(body) {
+        // 高さ + 重さ(固定)
+        const heightPoint = Math.floor((ground.position.y - body.position.y) / 10);
+        const weightPoint = 10; 
+        score += (heightPoint + weightPoint);
+        updateScore();
+    }
+
+    function updateScore() {
+        document.getElementById('score-val').innerText = score;
+    }
+
+    function gameOver() {
+        if (!gameActive) return;
+        gameActive = false;
+        
+        document.getElementById('final-score').innerText = score;
+        document.getElementById('game-over-screen').classList.remove('hidden');
+        document.getElementById('controls').style.display = 'none';
+        
+        document.getElementById('input-area').classList.remove('hidden');
+        document.getElementById('ranking-area').classList.add('hidden');
+    }
+
+    function resetGame() {
+        startGame();
+    }
+
+    // --- ランキング（LocalStorage） ---
+    function saveScore() {
+        const name = document.getElementById('player-name').value || "名無し";
+        const newRecord = { name: name, score: score, date: new Date().toLocaleDateString() };
+        
+        let rankings = JSON.parse(localStorage.getItem('pintxosRanking')) || [];
+        rankings.push(newRecord);
+        rankings.sort((a, b) => b.score - a.score); // 降順
+        rankings = rankings.slice(0, 5); // Top 5のみ保存
+        
+        localStorage.setItem('pintxosRanking', JSON.stringify(rankings));
+        
+        showRanking();
+    }
+
+    function showRanking() {
+        document.getElementById('input-area').classList.add('hidden');
+        document.getElementById('ranking-area').classList.remove('hidden');
+        
+        const list = document.getElementById('ranking-list');
+        list.innerHTML = "";
+        
+        const rankings = JSON.parse(localStorage.getItem('pintxosRanking')) || [];
+        rankings.forEach((r, idx) => {
+            const li = document.createElement('li');
+            li.innerHTML = `<span>${idx+1}. ${r.name}</span> <span>${r.score}pt</span>`;
+            list.appendChild(li);
+        });
+    }
+
+    // ゲーム初期化実行
+    window.onload = init;
+
+</script>
+</body>
+</html>
