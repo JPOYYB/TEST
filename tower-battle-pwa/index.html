@@ -89,9 +89,16 @@
       <small>pts</small>
     </div>
     <div class="hud-right">
-      <span id="hud-time">60</span>
+      <span id="hud-time">--</span>
       <small>s</small>
     </div>
+  </div>
+
+  <!-- Controls -->
+  <div id="controls" class="controls hidden" aria-label="操作ボタン">
+    <button id="btn-left" class="ctl" aria-label="左に移動">◀</button>
+    <button id="btn-drop" class="ctl primary" aria-label="落とす">DROP</button>
+    <button id="btn-right" class="ctl" aria-label="右に移動">▶</button>
   </div>
 
   <!-- Libs: Matter.js + poly-decomp for concave polygons -->

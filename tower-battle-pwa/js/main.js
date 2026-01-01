@@ -19,6 +19,8 @@ function showScreen(key){
 
 function setHudVisible(v){
   $('#hud').classList.toggle('hidden', !v);
+  $('#controls').classList.toggle('hidden', !v);
+  // time is not used (no timer); keep chip but do not update
 }
 
 function setTitleImages(cfg){
@@ -56,9 +58,10 @@ function setTitleImages(cfg){
     cfg,
     assets,
     canvas: $('#game'),
-    onHud: (score, timeLeft) => {
+    onHud: (score) => {
       $('#hud-score').textContent = String(score);
-      $('#hud-time').textContent = String(timeLeft);
+      // no timer
+      // $('#hud-time').textContent = String(timeLeft);
     },
     onGameOver: (score) => {
       setHudVisible(false);
@@ -69,6 +72,24 @@ function setTitleImages(cfg){
       showScreen('result');
     }
   });
+
+
+  // Controls (hold to move, tap to drop)
+  const btnLeft = $('#btn-left');
+  const btnRight = $('#btn-right');
+  const btnDrop = $('#btn-drop');
+
+  const hold = (el, dir) => {
+    const down = (e) => { e.preventDefault(); game.setMoveDir(dir); };
+    const up = (e) => { e.preventDefault(); game.setMoveDir(0); };
+    el.addEventListener('pointerdown', down, { passive:false });
+    el.addEventListener('pointerup', up, { passive:false });
+    el.addEventListener('pointercancel', up, { passive:false });
+    el.addEventListener('pointerleave', up, { passive:false });
+  };
+  hold(btnLeft, -1);
+  hold(btnRight, 1);
+  btnDrop.addEventListener('pointerdown', (e) => { e.preventDefault(); game.drop(); }, { passive:false });
 
   // UI handlers
   $('#btn-start').addEventListener('click', () => {

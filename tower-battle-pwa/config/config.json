@@ -8,7 +8,7 @@
   },
   "GAME": {
     "fps": 60,
-    "durationSec": 60,
+    "durationSec": 0,
     "gravityY": 1.0,
     "groundHeight": 110,
     "sideWallThickness": 120,
@@ -19,7 +19,9 @@
     "failYMargin": 260,
     "settleSpeed": 0.12,
     "settleAngularSpeed": 0.12,
-    "settleFramesNeeded": 18
+    "settleFramesNeeded": 18,
+    "spawnMoveSpeedPx": 7.5,
+    "platformWidthRatio": 0.7
   },
   "SPRITES": {
     "animalBaseSizePx": 512,
@@ -28,10 +30,10 @@
     "backgroundColor": "#0b1020"
   },
   "PHYSICS": {
-    "outlineAlphaThreshold": 8,
-    "outlineSampleScale": 0.25,
-    "outlineSimplifyEpsilon": 2.2,
-    "outlineMaxVertices": 90,
+    "outlineAlphaThreshold": 6,
+    "outlineSampleScale": 0.32,
+    "outlineSimplifyEpsilon": 1.8,
+    "outlineMaxVertices": 120,
     "restitution": 0.06,
     "friction": 0.9,
     "frictionStatic": 1.0,

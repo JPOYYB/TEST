@@ -1,52 +1,90 @@
 import { rdpSimplify, limitVertices } from './util.js';
 
 /**
- * Create polygon vertices from a transparent PNG by tracing the outer boundary.
- * This is intentionally "good enough" and configurable for speed.
+ * 透過PNGのアルファから「外周輪郭」を抽出して、Matter.js用の頂点列を返します。
+ * - 透過部分は当たり判定から除外（外周のみ。内部の穴は考慮しません）
+ * - 形が複雑でも“ひっかかり”が出やすいよう、凹形状も残せる設定にしています。
  *
- * Strategy:
- *  1) Draw scaled image to offscreen canvas
- *  2) Build binary alpha mask (alpha > threshold)
- *  3) Trace outer boundary with Moore-neighbor tracing (8-neighborhood)
- *  4) Simplify and cap vertices
- *
- * If tracing fails, return null (caller falls back to rectangle).
+ * 設定（config/config.json）:
+ *  PHYSICS.outlineAlphaThreshold
+ *  PHYSICS.outlineSampleScale
+ *  PHYSICS.outlineSimplifyEpsilon
+ *  PHYSICS.outlineMaxVertices
  */
 export async function verticesFromImage(img, cfg){
-  const thr = cfg.PHYSICS?.outlineAlphaThreshold ?? 8;
-  const scale = cfg.PHYSICS?.outlineSampleScale ?? 0.25;
-  const eps = cfg.PHYSICS?.outlineSimplifyEpsilon ?? 2.2;
-  const maxV = cfg.PHYSICS?.outlineMaxVertices ?? 90;
+  const thr = cfg.PHYSICS?.outlineAlphaThreshold ?? 6;
+  const scale = cfg.PHYSICS?.outlineSampleScale ?? 0.32;
+  const eps = cfg.PHYSICS?.outlineSimplifyEpsilon ?? 1.8;
+  const maxV = cfg.PHYSICS?.outlineMaxVertices ?? 120;
 
-  const w = Math.max(8, Math.floor(img.naturalWidth * scale));
-  const h = Math.max(8, Math.floor(img.naturalHeight * scale));
+  const w = Math.max(16, Math.floor(img.naturalWidth * scale));
+  const h = Math.max(16, Math.floor(img.naturalHeight * scale));
 
   const cvs = document.createElement('canvas');
   cvs.width = w; cvs.height = h;
   const ctx = cvs.getContext('2d', { willReadFrequently: true });
+
   ctx.clearRect(0,0,w,h);
   ctx.drawImage(img, 0, 0, w, h);
 
   const { data } = ctx.getImageData(0,0,w,h);
   const mask = new Uint8Array(w*h);
+  let solidCount = 0;
 
-  let found = false;
-  let sx = 0, sy = 0;
   for(let y=0;y<h;y++){
     for(let x=0;x<w;x++){
       const a = data[(y*w + x)*4 + 3];
       if (a > thr){
         mask[y*w + x] = 1;
-        if (!found){
-          found = true;
-          sx = x; sy = y;
+        solidCount++;
+      }
+    }
+  }
+  if (solidCount < 20) return null;
+
+  // boundary pixels (4-neighborhood)
+  const boundary = new Uint8Array(w*h);
+  let bx = -1, by = -1;
+  for(let y=1;y<h-1;y++){
+    for(let x=1;x<w-1;x++){
+      const i = y*w + x;
+      if (!mask[i]) continue;
+      if (!mask[i-1] || !mask[i+1] || !mask[i-w] || !mask[i+w]){
+        boundary[i] = 1;
+        if (by === -1 || y < by || (y === by && x < bx)){
+          bx = x; by = y; // top-leftmost boundary pixel
         }
       }
     }
   }
-  if (!found) return null;
+  if (bx === -1) return null;
 
-  // Moore-Neighbor tracing
+  const contour = traceMoore(boundary, w, h, bx, by);
+  if (!contour || contour.length < 24) return null;
+
+  // center + scale back
+  const invScale = 1/scale;
+  const cx = w/2;
+  const cy = h/2;
+  let pts = contour.map(p => ({
+    x: (p.x - cx) * invScale,
+    y: (p.y - cy) * invScale
+  }));
+
+  // simplify and cap
+  pts = rdpSimplify(pts, eps * invScale);
+  pts = limitVertices(pts, maxV);
+  pts = dedupeClose(pts, 0.7 * invScale);
+
+  if (pts.length < 8) return null;
+  // ensure clockwise (Matter prefers, but not mandatory)
+  if (polygonArea(pts) > 0) pts.reverse();
+
+  return pts;
+}
+
+function traceMoore(boundary, w, h, sx, sy){
+  // 8 directions (clockwise)
   const dirs = [
     {x: 1, y: 0},  // E
     {x: 1, y: 1},  // SE
@@ -58,73 +96,45 @@ export async function verticesFromImage(img, cfg){
     {x: 1, y:-1},  // NE
   ];
 
-  // Start: boundary pixel near sx,sy. We already found a solid pixel; ensure it's on boundary by moving left until edge.
+  // start at boundary pixel; set backtrack to west
   let x = sx, y = sy;
-  while(x>0 && mask[y*w + (x-1)] === 1) x--;
+  let bx = sx - 1, by = sy;
 
   const start = {x, y};
-  let back = {x: x-1, y}; // backtrack point
   const contour = [];
-  const limit = w*h*6; // safety
-
+  const safety = w*h*8;
   let steps = 0;
+
   do{
     contour.push({x, y});
-    // find neighbor starting from direction of back->current
-    let bi = dirIndex(x - back.x, y - back.y, dirs);
-    // scan neighbors clockwise
-    let foundNext = null;
-    let nextBack = null;
 
-    for(let i=0;i<8;i++){
-      const idx = (bi + 6 + i) % 8; // start a bit counterclockwise
+    // direction index from back -> current
+    let bi = dirIndex(x - bx, y - by, dirs);
+
+    // search neighbors clockwise starting from bi+1 (standard Moore)
+    let found = false;
+    for(let k=0;k<8;k++){
+      const idx = (bi + 1 + k) % 8;
       const nx = x + dirs[idx].x;
       const ny = y + dirs[idx].y;
-      if (nx>=0 && nx<w && ny>=0 && ny<h && mask[ny*w + nx] === 1){
-        foundNext = {x:nx, y:ny};
-        // back becomes the neighbor before foundNext in clockwise order
-        const bidx = (idx + 7) % 8;
-        nextBack = {x: x + dirs[bidx].x, y: y + dirs[bidx].y};
+      if (nx<0 || nx>=w || ny<0 || ny>=h) continue;
+      if (boundary[ny*w + nx]){
+        // next back is previous neighbor
+        const pb = (idx + 7) % 8;
+        bx = x + dirs[pb].x;
+        by = y + dirs[pb].y;
+        x = nx; y = ny;
+        found = true;
         break;
       }
     }
-
-    if (!foundNext) break;
-
-    back = nextBack;
-    x = foundNext.x;
-    y = foundNext.y;
+    if (!found) break;
 
     steps++;
-    if (steps > limit) break;
-  } while(!(x===start.x && y===start.y));
+    if (steps > safety) break;
+  } while(!(x === start.x && y === start.y));
 
-  if (contour.length < 12) return null;
-
-  // Convert to centered coordinates and scale back to original pixels
-  // We use pixel centers; also invert y later in drawing is handled elsewhere.
-  const invScale = 1 / scale;
-  const cx = w / 2;
-  const cy = h / 2;
-
-  let pts = contour.map(p => ({
-    x: (p.x - cx) * invScale,
-    y: (p.y - cy) * invScale
-  }));
-
-  // Simplify and cap vertices
-  pts = rdpSimplify(pts, eps * invScale);
-  pts = limitVertices(pts, maxV);
-
-  // Remove near-duplicates
-  pts = dedupeClose(pts, 0.8 * invScale);
-
-  // Ensure clockwise order for Matter (it can handle either but prefer)
-  if (polygonArea(pts) > 0){
-    pts.reverse();
-  }
-
-  return pts;
+  return contour;
 }
 
 function dirIndex(dx, dy, dirs){
@@ -149,13 +159,10 @@ function dedupeClose(pts, minDist){
   for (let i=0;i<pts.length;i++){
     const p = pts[i];
     const prev = out[out.length-1];
-    if (!prev){
-      out.push(p); continue;
-    }
+    if (!prev){ out.push(p); continue; }
     const dx = p.x - prev.x, dy = p.y - prev.y;
     if (dx*dx + dy*dy >= md2) out.push(p);
   }
-  // Close loop dedupe
   if (out.length > 3){
     const a = out[0], b = out[out.length-1];
     const dx = a.x-b.x, dy = a.y-b.y;

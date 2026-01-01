@@ -156,3 +156,37 @@ h2{
 .rank-no{ width: 26px; text-align:right; font-weight: 900; color: var(--muted); }
 .rank-name{ font-weight: 800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width: 220px; }
 .rank-score{ font-weight: 900; }
+
+
+.controls{
+  position: fixed;
+  left: 0; right: 0;
+  bottom: 0;
+  padding: 12px 12px max(14px, env(safe-area-inset-bottom));
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  align-items: center;
+  pointer-events: auto;
+}
+.controls.hidden{ display:none; }
+.ctl{
+  width: 86px;
+  height: 64px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: linear-gradient(180deg, rgba(36,50,90,1), rgba(30,42,77,1));
+  color: var(--text);
+  font-size: 22px;
+  font-weight: 900;
+  box-shadow: 0 16px 34px rgba(0,0,0,.38);
+}
+.ctl.primary{
+  width: 132px;
+  background: linear-gradient(180deg, rgba(59,130,246,1), rgba(37,99,235,1));
+  letter-spacing: .04em;
+}
+.ctl:active{ transform: translateY(1px); opacity:.95; }
+
+/* HUD time not used (no timer mode) */
+#hud-time{ opacity: .65; }

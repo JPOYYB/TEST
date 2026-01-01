@@ -22,12 +22,16 @@ export class TowerBattle{
     this.w = 0; this.h = 0;
 
     this.running = false;
+
+    // Controls
+    this.moveDir = 0; // -1 left, 0 none, 1 right
+
     this.lastTs = 0;
 
     // Game state
     this.score = 0;
     this.lastScore = 0;
-    this.timeLeft = cfg.GAME?.durationSec ?? 60;
+    this.timeLeft = 0;
 
     this.ground = null;
     this.walls = [];
@@ -46,9 +50,6 @@ export class TowerBattle{
     this._resize = () => this.resize();
     window.addEventListener('resize', this._resize, { passive:true });
 
-    this._pointer = (e) => this.onPointer(e);
-    window.addEventListener('pointerdown', this._pointer, { passive:false });
-
     this.resize();
   }
 
@@ -59,6 +60,10 @@ export class TowerBattle{
   async start(){
     // reset world and state
     this.running = false;
+
+    // Controls
+    this.moveDir = 0; // -1 left, 0 none, 1 right
+
     World.clear(this.world, false);
     Engine.clear(this.engine);
 
@@ -66,7 +71,7 @@ export class TowerBattle{
     this.world = this.engine.world;
 
     this.score = 0;
-    this.timeLeft = this.cfg.GAME?.durationSec ?? 60;
+    this.timeLeft = 0;
     this.lastScore = 0;
     this.scored.clear();
     this.settleCounter.clear();
@@ -95,21 +100,28 @@ export class TowerBattle{
 
   buildBounds(){
     const gh = this.cfg.GAME?.groundHeight ?? 110;
-    const wallT = this.cfg.GAME?.sideWallThickness ?? 120;
+    const platformRatio = this.cfg.GAME?.platformWidthRatio ?? 0.70;
+    const pw = Math.max(220, this.w * platformRatio);
 
-    const ground = Bodies.rectangle(this.w/2, this.h - gh/2, this.w + 2*wallT, gh, {
+    const yTop = this.h - gh; // platform top line (visual)
+    this.platform = {
+      xMin: (this.w - pw)/2,
+      xMax: (this.w + pw)/2,
+      yTop
+    };
+
+    // Narrow platform body
+    const ground = Bodies.rectangle(this.w/2, this.h - gh/2, pw, gh, {
       isStatic: true,
       friction: 1,
       restitution: 0,
-      label: 'ground'
+      label: 'platform'
     });
 
-    const left = Bodies.rectangle(-wallT/2, this.h/2, wallT, this.h*2, { isStatic:true, label:'wall' });
-    const right = Bodies.rectangle(this.w + wallT/2, this.h/2, wallT, this.h*2, { isStatic:true, label:'wall' });
-
+    // No side walls (falling off is allowed -> miss)
     this.ground = ground;
-    this.walls = [left, right];
-    World.add(this.world, [ground, left, right]);
+    this.walls = [];
+    World.add(this.world, [ground]);
   }
 
   async spawnNext(makeStatic){
@@ -191,22 +203,23 @@ export class TowerBattle{
     return `tb_vtx_v${v}|${src}|thr${p.outlineAlphaThreshold ?? 8}|s${p.outlineSampleScale ?? 0.25}|e${p.outlineSimplifyEpsilon ?? 2.2}|m${p.outlineMaxVertices ?? 90}`;
   }
 
-  onPointer(e){
+  setMoveDir(dir){
+    this.moveDir = Math.max(-1, Math.min(1, dir|0));
+  }
+
+  drop(){
     if (!this.running) return;
-    // drop current moving animal on tap
-    e.preventDefault();
     if (this.active && this.active.isStatic){
       Body.setStatic(this.active, false);
-      // give tiny random to avoid perfect stacking every time
       Body.applyForce(this.active, this.active.position, {
         x: (Math.random() - 0.5) * 0.00012,
         y: 0
       });
-      // spawn next after a short delay
       setTimeout(() => {
         if (this.running) this.spawnNext(true);
       }, 120);
     }
+  }
   }
 
   loop(ts){
@@ -218,37 +231,39 @@ export class TowerBattle{
     const fps = this.cfg.GAME?.fps ?? 60;
     Engine.update(this.engine, 1000 / fps);
 
-    // Move active preview left-right
+    // Move active preview by button
     if (this.active && this.active.isStatic){
-      const speed = this.cfg.GAME?.spawnMoveSpeed ?? 0.9;
-      const range = (this.cfg.GAME?.spawnMoveRangeRatio ?? 0.40) * this.w;
-      const x0 = this.w/2;
-      const x = x0 + Math.sin(ts * 0.001 * speed) * range;
-      Body.setPosition(this.active, { x, y: this.active.position.y });
+      const speed = this.cfg.GAME?.spawnMoveSpeedPx ?? 7.5;
+      const dx = this.moveDir * speed * (dtMs / (1000/60));
+      const margin = 18;
+      const minX = (this.platform?.xMin ?? 0) + margin;
+      const maxX = (this.platform?.xMax ?? this.w) - margin;
+      const nx = clamp(this.active.position.x + dx, minX, maxX);
+      Body.setPosition(this.active, { x: nx, y: this.active.position.y });
     }
 
     // scoring: detect bodies that have settled
     this.updateScoring();
 
-    // timer
-    const prev = this.timeLeft;
-    this.timeLeft -= dtMs / 1000;
-    const timeInt = Math.max(0, Math.ceil(this.timeLeft));
-    if (timeInt !== Math.ceil(prev)) this.onHud?.(this.score, timeInt);
-
-    // fail condition: any body fell below screen
+    // fail condition:
+ any body fell below screen
     const failY = this.h + (this.cfg.GAME?.failYMargin ?? 260);
     const animals = Composite.allBodies(this.world).filter(b => b.label === 'animal' && !b.isStatic);
     for (const b of animals){
+      // Miss: fell off platform (x outside platform bounds) and below platform top
+      if (this.platform){
+        const offX = (b.position.x < this.platform.xMin || b.position.x > this.platform.xMax);
+        const belowTop = (b.position.y > this.platform.yTop + 12);
+        if (offX && belowTop){
+          this.gameOver();
+          return;
+        }
+      }
+
       if (b.position.y > failY){
         this.gameOver();
         return;
       }
-    }
-
-    if (this.timeLeft <= 0){
-      this.gameOver();
-      return;
     }
 
     this.render();
@@ -286,7 +301,7 @@ export class TowerBattle{
           const height = Math.max(0, (this.h - (this.cfg.GAME?.groundHeight ?? 110)) - top);
           const bonus = Math.floor(height / hbEvery) * hbPts;
           this.score += bonus;
-          this.onHud?.(this.score, Math.max(0, Math.ceil(this.timeLeft)));
+          this.onHud?.(this.score);
           this.playPop();
         }
       } else {
@@ -341,6 +356,10 @@ export class TowerBattle{
   gameOver(){
     if (!this.running) return;
     this.running = false;
+
+    // Controls
+    this.moveDir = 0; // -1 left, 0 none, 1 right
+
     this.lastScore = this.score;
     this.onGameOver?.(this.lastScore);
   }
@@ -372,14 +391,16 @@ export class TowerBattle{
     ctx.fillStyle = g;
     ctx.fillRect(0,0,this.w,this.h);
 
-    // draw ground
+    // draw platform
     const gh = this.cfg.GAME?.groundHeight ?? 110;
+    const xMin = this.platform?.xMin ?? 0;
+    const xMax = this.platform?.xMax ?? this.w;
     ctx.fillStyle = 'rgba(0,0,0,0.20)';
-    ctx.fillRect(0, this.h - gh, this.w, gh);
+    ctx.fillRect(xMin, this.h - gh, xMax - xMin, gh);
     ctx.strokeStyle = 'rgba(255,255,255,0.10)';
     ctx.beginPath();
-    ctx.moveTo(0, this.h - gh);
-    ctx.lineTo(this.w, this.h - gh);
+    ctx.moveTo(xMin, this.h - gh);
+    ctx.lineTo(xMax, this.h - gh);
     ctx.stroke();
 
     // draw bodies (animals)
