@@ -1,4 +1,4 @@
-/* shape-extract.js (dbg-v2-crop)
+/* shape-extract.js (dbg-v2-crop 2)
  * - Extract contour from mask/alpha
  * - Compute bbox of solid pixels
  * - Return verts in CROPPED coordinate space + centroid-based spriteOffset
@@ -440,3 +440,4 @@
 
   global.ShapeExtract = ShapeExtract;
 })(window);
+
