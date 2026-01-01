@@ -7,546 +7,607 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/poly-decomp@0.3.0/build/decomp.min.js"></script>
-  <script src="./shape-extract.js?v=11"></script>
+  <script src="./shape-extract.js"></script>
 
   <style>
-    body{margin:0;overflow:hidden;background:#f0f0f0;font-family:system-ui,-apple-system,Segoe UI,sans-serif;touch-action:none;}
-    #game-root{position:fixed;inset:0;z-index:0;}
-    canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
-    #ui-layer{position:fixed;inset:0;z-index:10;pointer-events:none;}
-    #score-board{position:absolute;top:18px;left:18px;font-size:28px;font-weight:800;color:#222;text-shadow:2px 2px 0 #fff;}
-    #controls{position:absolute;bottom:22px;left:0;width:100%;height:92px;display:flex;justify-content:center;align-items:center;gap:18px;pointer-events:auto;}
-    .control-btn{width:64px;height:64px;background:rgba(255,255,255,.95);border:2px solid #888;border-radius:50%;font-size:26px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 10px rgba(0,0,0,.18);user-select:none;-webkit-user-select:none;}
-    .control-btn:active{transform:translateY(2px);background:#e6e6e6;}
-    #btn-drop{width:88px;height:88px;background:#ff4757;color:#fff;border:none;font-size:34px;}
-    .overlay{position:fixed;inset:0;background:rgba(255,255,255,.96);display:flex;flex-direction:column;justify-content:center;align-items:center;z-index:20;pointer-events:auto;}
-    .hidden{display:none!important;}
-    .primary-btn{padding:14px 36px;font-size:18px;background:#2ecc71;color:#fff;border:none;border-radius:999px;cursor:pointer;margin-top:14px;}
-    #debug-btn{position:fixed;top:14px;right:14px;z-index:30;pointer-events:auto;background:#111;color:#fff;border:none;padding:10px 14px;border-radius:999px;box-shadow:0 6px 18px rgba(0,0,0,.25);font-weight:700;}
-    #debug-panel{position:fixed;right:14px;top:64px;width:min(360px,calc(100vw - 28px));z-index:30;pointer-events:auto;background:rgba(20,20,20,.88);color:#fff;border-radius:16px;padding:14px;font-size:13px;line-height:1.35;white-space:pre-wrap;}
-    #debug-panel.hidden{display:none!important;}
-    #loading{text-align:center;}
-    #loading h1{margin:0 0 6px 0;font-size:40px;}
-    #loading p{margin:0 0 18px 0;color:#333;}
-    #loading .pill{padding:14px 28px;border-radius:999px;background:#2ecc71;color:#fff;font-weight:800;}
+    body { margin:0; overflow:hidden; background:#f2f2f2; font-family:system-ui, -apple-system, sans-serif; touch-action:none; }
+    canvas { display:block; position:fixed; inset:0; z-index:0; }
+
+    #ui { position:fixed; inset:0; z-index:10; pointer-events:none; }
+    #score { position:absolute; top:16px; left:16px; font-weight:900; font-size:34px; color:#222; text-shadow:2px 2px 0 rgba(255,255,255,0.85); }
+
+    #controls { position:absolute; bottom:24px; left:0; width:100%; display:flex; justify-content:center; gap:16px; pointer-events:auto; }
+    .btn { width:72px; height:72px; border-radius:999px; border:2px solid rgba(0,0,0,0.35); background:rgba(255,255,255,0.95);
+           box-shadow:0 6px 10px rgba(0,0,0,0.18); font-size:28px; }
+    .btn:active { transform:translateY(2px); background:#ddd; }
+    #drop { width:92px; height:92px; background:#ff4a5d; color:#fff; border:none; font-size:34px; }
+
+    .overlay { position:fixed; inset:0; z-index:20; background:rgba(255,255,255,0.96); display:flex; flex-direction:column; justify-content:center; align-items:center; gap:12px; }
+    .hidden { display:none !important; }
+    .primary { padding:14px 34px; font-size:18px; border-radius:999px; border:none; background:#2ecc71; color:#fff; }
+    .hint { opacity:0.75; }
+
+    #dbgToggle { position:fixed; top:14px; right:14px; z-index:30; pointer-events:auto;
+      padding:10px 14px; border-radius:999px; border:0; background:#222; color:#fff; opacity:0.88; }
+    #dbgPanel { position:fixed; top:60px; right:14px; z-index:30; pointer-events:none;
+      width:320px; max-width:88vw; background:rgba(20,20,20,0.86); color:#fff; border-radius:16px;
+      padding:12px 14px; font-size:12px; line-height:1.35; white-space:pre-wrap; }
   </style>
 </head>
-
 <body>
-  <div id="game-root"></div>
 
-  <div id="ui-layer">
-    <div id="score-board">SCORE: <span id="score-val">0</span></div>
+  <div id="ui">
+    <div id="score">SCORE: <span id="sv">0</span></div>
     <div id="controls" class="hidden">
-      <button class="control-btn" id="btn-left">⬅️</button>
-      <button class="control-btn" id="btn-rotate">🔄</button>
-      <button class="control-btn" id="btn-right">➡️</button>
-      <button class="control-btn" id="btn-drop">⬇️</button>
+      <button class="btn" id="left">⬅️</button>
+      <button class="btn" id="rot">🔄</button>
+      <button class="btn" id="right">➡️</button>
+      <button class="btn" id="drop">⬇️</button>
     </div>
   </div>
 
-  <button id="debug-btn">🐞 DEBUG</button>
-  <div id="debug-panel" class="hidden"></div>
+  <button id="dbgToggle" class="hidden">🐞 DEBUG</button>
+  <div id="dbgPanel" class="hidden"></div>
 
   <div id="loading" class="overlay">
-    <h1>Pintxos Tower</h1>
-    <p>積み上げろ。落としたら負け。</p>
-    <div class="pill" id="loading-text">LOADING...</div>
+    <h1 style="margin:0;">Pintxos Tower</h1>
+    <div class="hint">積み上げろ。落としたら負け。</div>
+    <button class="primary" disabled>LOADING...</button>
   </div>
 
-  <div id="title-screen" class="overlay hidden">
-    <h1 style="margin:0 0 8px 0; font-size:42px;">Pintxos Tower</h1>
-    <p style="margin:0 0 18px 0; color:#333;">積み上げろ。落としたら負け。</p>
-    <button class="primary-btn" id="btn-start">START</button>
+  <div id="title" class="overlay hidden">
+    <h1 style="margin:0;">Pintxos Tower</h1>
+    <div class="hint">積み上げろ。落としたら負け。</div>
+    <button class="primary" id="start">START</button>
   </div>
 
-  <div id="game-over-screen" class="overlay hidden">
-    <h1>GAME OVER</h1>
-    <p>Score: <span id="final-score">0</span></p>
-    <button class="primary-btn" id="btn-retry">リトライ</button>
+  <div id="over" class="overlay hidden">
+    <h1 style="margin:0;">GAME OVER</h1>
+    <div>Score: <span id="final">0</span></div>
+    <div id="inputArea">
+      <input id="name" maxlength="8" placeholder="名前" style="padding:10px; font-size:16px; text-align:center;">
+      <div style="height:8px"></div>
+      <button class="primary" id="save">ランキング登録</button>
+      <div style="height:8px"></div>
+      <button id="retry" style="background:none;border:none;text-decoration:underline;opacity:.75;">リトライ</button>
+    </div>
+    <div id="rankArea" class="hidden">
+      <h3 style="margin:8px 0;">ランキング</h3>
+      <ul id="rank" style="list-style:none; padding:0; margin:0; width:240px;"></ul>
+      <div style="height:8px"></div>
+      <button class="primary" id="again">もう一度</button>
+    </div>
   </div>
 
 <script>
-(() => {
-  "use strict";
-  if (window.__PT_BOOTED__) return;
-  window.__PT_BOOTED__ = true;
+/* =========================
+   PATCH: ここだけ触れば調整できる
+   ========================= */
+const CONFIG = {
+  COUNT: 11,
+  TEX_DIR: "img",
+  MASK_DIR: "mask",
 
-  const { Engine, Render, Runner, Bodies, Composite, Events, Body, Common, Sleeping } = Matter;
+  SPRITE_BASE: 100,       // 画像の基準サイズ（100x100想定）
+  SPRITE_SCALE: 1.00,     // 表示倍率（まずは1.00固定で安定させる）
+  HIT_SCALE: 0.98,        // 当たり判定（ポリゴン）倍率：隙間を詰めたいなら 0.96-1.00 で調整
 
-  // ===== CONFIG（調整ポイントはここだけ） =====
-  const CONFIG = {
-    ASSET_COUNT: 11,
-    TEX_PATTERN: "img/{i}.png",
-    MASK_PATTERN: "mask/{i}.png",
+  MOVE_PX: 7,             // 左右移動
+  ROT_RAD: Math.PI/8,     // 回転
 
-    groundHeightFromBottom: 180,
-    groundWidthRatio: 0.75,
-    groundThickness: 18,
+  GROUND_Y_FROM_BOTTOM: 190,
+  GROUND_W_RATIO: 0.72,
 
-    targetMaxPx: 150,   // 見た目サイズ
-    hitScale: 1.03,     // 隙間が気になるなら 1.04〜1.06
+  SETTLE_FRAMES: 18,
+  SPEED_EPS: 0.25,
+  ANG_EPS: 0.025,
 
-    moveStep: 8,
-    rotateStep: Math.PI / 10,
+  FORCE_FREEZE_MS: 20000,     // 20秒以内に止める
+  FREEZE_OTHERS_MS: 20000,    // 古いのも止める
 
-    // settle（「止まった」判定）: touched後のみ
-    settleSpeed: 0.16,
-    settleFrames: 20,
+  MAX_STACK: 30,              // 多すぎると重くなるので上限
 
-    // 20秒ルール：ここで強制スリープ
-    forceStopMs: 20000,
+  MASK: { alphaThreshold: 8, dilate: 1, simplifyEps: 1.2, maxPoints: 64, minArea: 40 },
 
-    // ブルブル対策
-    frictionAir: 0.035,     // 空気抵抗（上げると早く止まる）
-    sleepThreshold: 35,     // 小さいほど寝やすい（止まりやすい）
-    positionIterations: 7,  // 安定化（増やしすぎ注意）
-    velocityIterations: 6,
+  // デバッグ
+  OUTLINE: true,
+};
+/* ========================= */
 
-    missExtra: 520,
+const Engine = Matter.Engine;
+const Render = Matter.Render;
+const Runner = Matter.Runner;
+const Bodies = Matter.Bodies;
+const Composite = Matter.Composite;
+const Events = Matter.Events;
+const Body = Matter.Body;
+const Sleeping = Matter.Sleeping;
 
-    debugDefault: true
+let engine, render, runner;
+let w = innerWidth, h = innerHeight;
+
+let ground = null;
+let score = 0;
+let gameActive = false;
+
+let current = null;
+let dropping = false;
+let settleCount = 0;
+let dropStartMs = 0;
+
+let assets = [];     // {id, tex, mask}
+let shapes = {};     // id -> {verts,...}
+let debugOn = false;
+let spawnTimer = 0;
+let spawnSeq = 0;
+
+const $ = (id)=>document.getElementById(id);
+const log = (...a)=>console.log(...a);
+const dbgPanel = $("dbgPanel");
+
+function setDbg(text){
+  if(!debugOn) return;
+  dbgPanel.textContent = text;
+}
+
+function show(el, on){ el.classList.toggle("hidden", !on); }
+
+function buildAssets(){
+  assets = [];
+  for(let i=1;i<=CONFIG.COUNT;i++){
+    assets.push({
+      id: i,
+      tex: `${CONFIG.TEX_DIR}/${i}.png`,
+      mask: `${CONFIG.MASK_DIR}/${i}.png`,
+    });
+  }
+}
+
+function preloadImages(urls){
+  return Promise.all(urls.map(url => new Promise((resolve,reject)=>{
+    const img = new Image();
+    img.onload = ()=>resolve(img);
+    img.onerror = ()=>reject(new Error("Texture load failed: "+url));
+    img.src = url;
+    setTimeout(()=>reject(new Error("Texture timeout: "+url)), 8000);
+  })));
+}
+
+/* =========================
+   PATCH: 大量スポーン防止の中核
+   ========================= */
+function requestSpawn(delayMs=250){
+  if(!gameActive) return;
+  if(current) return;
+  if(spawnTimer) return;
+  spawnTimer = setTimeout(()=>{
+    spawnTimer = 0;
+    if(!gameActive) return;
+    if(current) return;
+    spawnOne();
+  }, delayMs);
+}
+/* ========================= */
+
+function createWorld(){
+  engine = Engine.create();
+  // 物理の安定性を少し上げる
+  engine.positionIterations = 10;
+  engine.velocityIterations = 10;
+
+  // concave対応
+  if (window.decomp) Matter.Common.setDecomp(window.decomp);
+
+  render = Render.create({
+    element: document.body,
+    engine,
+    options: {
+      width: w,
+      height: h,
+      wireframes: false,
+      background: "#f2f2f2",
+      pixelRatio: devicePixelRatio || 1
+    }
+  });
+  render.options.showSleeping = false; // ←薄くならない
+
+  Render.run(render);
+  runner = Runner.create();
+  Runner.run(runner, engine);
+
+  Events.on(engine, "beforeUpdate", tick);
+  Events.on(render, "afterRender", drawDebug);
+
+  addEventListener("resize", ()=>{
+    w = innerWidth; h = innerHeight;
+    render.canvas.width = w; render.canvas.height = h;
+    createGround();
+  });
+}
+
+function createGround(){
+  if(ground) Composite.remove(engine.world, ground);
+
+  const y = h - CONFIG.GROUND_Y_FROM_BOTTOM;
+  const gw = w * CONFIG.GROUND_W_RATIO;
+
+  ground = Bodies.rectangle(w/2, y, gw, 20, {
+    isStatic: true,
+    label: "Ground",
+    friction: 1.0,
+    render: { fillStyle: "#8b4513" }
+  });
+  Composite.add(engine.world, ground);
+}
+
+function resetWorld(){
+  Composite.clear(engine.world);
+  Engine.clear(engine);
+  createGround();
+  Render.lookAt(render, {min:{x:0,y:0}, max:{x:w,y:h}});
+}
+
+function startGame(){
+  show($("title"), false);
+  show($("over"), false);
+  show($("controls"), true);
+
+  resetWorld();
+
+  score = 0;
+  $("sv").textContent = score;
+
+  current = null;
+  dropping = false;
+  settleCount = 0;
+
+  gameActive = true;
+  requestSpawn(0);
+}
+
+function spawnOne(){
+  if(!gameActive) return;
+  if(current) return;
+
+  const a = assets[Math.floor(Math.random()*assets.length)];
+  const s = shapes[a.id];
+  if(!s || !s.verts){
+    // ここに来るなら shape が壊れてる
+    setDbg(`spawn fail: shape missing id=${a.id}`);
+    requestSpawn(300);
+    return;
+  }
+
+  const spawnX = w/2;
+  const spawnY = (render.bounds.min.y || 0) + 120;
+
+  const scaleSprite = CONFIG.SPRITE_SCALE;       // 表示倍率
+  const scaleHit = CONFIG.SPRITE_SCALE * CONFIG.HIT_SCALE;
+
+  // Bodies.fromVertices は “中央座標 + verts(ローカル)” のつもりで使う
+  let body = Bodies.fromVertices(spawnX, spawnY, [s.verts], {
+    label: "Pintxo",
+    friction: 0.9,
+    frictionStatic: 1.2,
+    restitution: 0.03,
+    density: 0.002,
+    frictionAir: 0.03,
+    render: {
+      sprite: {
+        texture: a.tex,
+        xScale: scaleSprite,
+        yScale: scaleSprite,
+        xOffset: 0.5,
+        yOffset: 0.5
+      }
+    }
+  }, true);
+
+  if(!body){
+    // 最終fallback（絶対に消さない）
+    body = Bodies.rectangle(spawnX, spawnY, 70*scaleHit, 50*scaleHit, {
+      label: "Pintxo",
+      friction: 0.9, frictionStatic: 1.2, restitution: 0.03, density: 0.002, frictionAir: 0.03,
+      render: { sprite:{ texture:a.tex, xScale:scaleSprite, yScale:scaleSprite, xOffset:0.5, yOffset:0.5 } }
+    });
+  } else {
+    Body.scale(body, scaleHit, scaleHit);
+  }
+
+  // aim中は静止
+  Body.setStatic(body, true);
+
+  body.__id = ++spawnSeq;
+  body.__bornMs = performance.now();
+  body.__assetId = a.id;
+  body.__fallback = !!s.fallback;
+  body.__isCurrent = true;
+
+  current = body;
+  dropping = false;
+  settleCount = 0;
+
+  Composite.add(engine.world, body);
+
+  if(debugOn){
+    setDbg(
+      `[SPAWN #${body.__id}] asset=${a.id}\n`+
+      `fallback=${s.fallback} reason=${s.reason}\n`+
+      `verts=${s.verts.length} solid=${(s.meta?.solidRatio??0).toFixed(3)}\n`+
+      `HIT_SCALE=${CONFIG.HIT_SCALE} SPRITE_SCALE=${CONFIG.SPRITE_SCALE}`
+    );
+  }
+}
+
+function drop(){
+  if(!current || dropping) return;
+  dropping = true;
+  dropStartMs = performance.now();
+  Body.setStatic(current, false);
+}
+
+function move(dx){
+  if(!current || dropping) return;
+  const nx = Math.max(40, Math.min(w-40, current.position.x + dx));
+  Body.setPosition(current, {x:nx, y: current.position.y});
+}
+
+function rotate(){
+  if(!current || dropping) return;
+  Body.rotate(current, CONFIG.ROT_RAD);
+}
+
+function cleanupStack(){
+  const list = Composite.allBodies(engine.world).filter(b => b.label==="Pintxo" && !b.__isCurrent);
+  if(list.length <= CONFIG.MAX_STACK) return;
+  list.sort((a,b)=>(a.__id||0)-(b.__id||0));
+  const rm = list.length - CONFIG.MAX_STACK;
+  for(let i=0;i<rm;i++){
+    Composite.remove(engine.world, list[i]);
+  }
+}
+
+function freezeBody(b){
+  Body.setVelocity(b, {x:0,y:0});
+  Body.setAngularVelocity(b, 0);
+  Sleeping.set(b, true);
+  Body.setStatic(b, true);
+}
+
+function addScoreFor(b){
+  const diff = ground.position.y - b.position.y;
+  if(diff > 0){
+    score += (Math.floor(diff/10) + 10);
+    $("sv").textContent = score;
+  }
+}
+
+function gameOver(){
+  gameActive = false;
+  show($("controls"), false);
+  $("final").textContent = score;
+  show($("over"), true);
+  show($("rankArea"), false);
+  show($("inputArea"), true);
+}
+
+function tick(){
+  if(!gameActive) return;
+
+  // ルーズ条件：地面より十分下に落ちたら負け
+  const loseY = ground.position.y + h*1.1;
+  const bodies = Composite.allBodies(engine.world);
+
+  for(const b of bodies){
+    if(b.label !== "Pintxo") continue;
+    if(b.__isCurrent) continue;
+    if(b.position.y > loseY){
+      gameOver();
+      return;
+    }
+  }
+
+  // dropping中の確定判定
+  if(current && dropping){
+    const v = current.velocity;
+    const speed = Math.hypot(v.x, v.y);
+    const ang = Math.abs(current.angularVelocity);
+
+    // 20秒以内に止める（ブルブル対策の最終兵器）
+    const age = performance.now() - dropStartMs;
+    if(age > CONFIG.FORCE_FREEZE_MS){
+      freezeBody(current);
+      current.__isCurrent = false;
+      addScoreFor(current);
+      cleanupStack();
+      current = null;
+      dropping = false;
+      settleCount = 0;
+      requestSpawn(0);
+      return;
+    }
+
+    if(speed < CONFIG.SPEED_EPS && ang < CONFIG.ANG_EPS){
+      settleCount++;
+    } else {
+      settleCount = 0;
+    }
+
+    if(settleCount >= CONFIG.SETTLE_FRAMES){
+      // 確定
+      freezeBody(current);
+      current.__isCurrent = false;
+      addScoreFor(current);
+      cleanupStack();
+      current = null;
+      dropping = false;
+      settleCount = 0;
+      requestSpawn(220);
+      return;
+    }
+  }
+
+  // 古いピンチョスも20秒で止める
+  const now = performance.now();
+  for(const b of bodies){
+    if(b.label !== "Pintxo") continue;
+    if(b.__isCurrent) continue;
+    const age = now - (b.__bornMs || now);
+    if(age > CONFIG.FREEZE_OTHERS_MS){
+      const v = b.velocity;
+      const speed = Math.hypot(v.x, v.y);
+      const ang = Math.abs(b.angularVelocity);
+      if(speed > CONFIG.SPEED_EPS || ang > CONFIG.ANG_EPS){
+        freezeBody(b);
+      }
+    }
+  }
+
+  // カメラ追従（上方向）
+  let highestY = ground.position.y;
+  let has = false;
+  for(const b of bodies){
+    if(b.label !== "Pintxo") continue;
+    if(b.__isCurrent) continue;
+    if(b.position.y < highestY){
+      highestY = b.position.y;
+      has = true;
+    }
+  }
+  let targetTop = 0;
+  if(has) targetTop = highestY - h*0.55;
+  if(targetTop > 0) targetTop = 0;
+
+  const curTop = render.bounds.min.y;
+  if(targetTop < curTop){
+    const ny = curTop + (targetTop-curTop)*0.06;
+    Render.lookAt(render, {min:{x:0,y:ny}, max:{x:w,y:ny+h}});
+  } else if(curTop < 0 && !has){
+    Render.lookAt(render, {min:{x:0,y:0}, max:{x:w,y:h}});
+  }
+}
+
+function drawDebug(){
+  if(!debugOn || !CONFIG.OUTLINE) return;
+  const ctx = render.context;
+  const bodies = Composite.allBodies(engine.world);
+
+  Matter.Render.startViewTransform(render);
+
+  for(const b of bodies){
+    if(b.label !== "Pintxo") continue;
+    const vs = b.vertices;
+    ctx.beginPath();
+    ctx.moveTo(vs[0].x, vs[0].y);
+    for(let i=1;i<vs.length;i++) ctx.lineTo(vs[i].x, vs[i].y);
+    ctx.closePath();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = b.__isCurrent ? "#00ff66" : "rgba(0,180,255,0.55)";
+    ctx.stroke();
+  }
+
+  Matter.Render.endViewTransform(render);
+}
+
+/* Ranking */
+function saveScore(){
+  const name = ($("name").value || "名無し").slice(0,8);
+  const data = JSON.parse(localStorage.getItem("pintxosRank") || "[]");
+  data.push({name, score});
+  data.sort((a,b)=>b.score-a.score);
+  localStorage.setItem("pintxosRank", JSON.stringify(data.slice(0,5)));
+  showRank();
+}
+function showRank(){
+  const data = JSON.parse(localStorage.getItem("pintxosRank") || "[]");
+  const ul = $("rank");
+  ul.innerHTML = "";
+  data.forEach((d,i)=>{
+    const li = document.createElement("li");
+    li.style.display="flex";
+    li.style.justifyContent="space-between";
+    li.style.borderBottom="1px solid rgba(255,255,255,0.25)";
+    li.style.padding="6px 0";
+    li.innerHTML = `<span>${i+1}. ${d.name}</span><span>${d.score}</span>`;
+    ul.appendChild(li);
+  });
+  show($("inputArea"), false);
+  show($("rankArea"), true);
+}
+
+function initControls(){
+  const hold = (el, fn)=>{
+    let t=0;
+    const start=(e)=>{e.preventDefault(); fn(); t=setInterval(fn, 50);};
+    const end=(e)=>{e.preventDefault(); clearInterval(t); t=0;};
+    el.addEventListener("touchstart", start, {passive:false});
+    el.addEventListener("touchend", end);
+    el.addEventListener("mousedown", start);
+    el.addEventListener("mouseup", end);
+    el.addEventListener("mouseleave", end);
+  };
+  hold($("left"), ()=>move(-CONFIG.MOVE_PX));
+  hold($("right"), ()=>move(CONFIG.MOVE_PX));
+  $("rot").addEventListener("click", rotate);
+  $("rot").addEventListener("touchstart", (e)=>{e.preventDefault(); rotate();},{passive:false});
+  $("drop").addEventListener("click", drop);
+  $("drop").addEventListener("touchstart", (e)=>{e.preventDefault(); drop();},{passive:false});
+
+  $("start").onclick = startGame;
+  $("retry").onclick = ()=>{ show($("over"), false); startGame(); };
+  $("again").onclick = ()=>{ show($("over"), false); startGame(); };
+  $("save").onclick = saveScore;
+}
+
+async function boot(){
+  // debug switch
+  const qs = new URLSearchParams(location.search);
+  debugOn = qs.has("debug") || localStorage.getItem("debugOn")==="1";
+
+  show($("dbgToggle"), debugOn);
+  show($("dbgPanel"), debugOn);
+  $("dbgToggle").onclick = ()=>{
+    debugOn = !debugOn;
+    localStorage.setItem("debugOn", debugOn ? "1" : "0");
+    location.reload();
   };
 
-  const elScore = document.getElementById("score-val");
-  const elLoading = document.getElementById("loading");
-  const elLoadingText = document.getElementById("loading-text");
-  const elTitle = document.getElementById("title-screen");
-  const elOver = document.getElementById("game-over-screen");
-  const elFinal = document.getElementById("final-score");
-  const elControls = document.getElementById("controls");
-  const elDebugBtn = document.getElementById("debug-btn");
-  const elDebugPanel = document.getElementById("debug-panel");
+  buildAssets();
+  createWorld();
+  createGround();
+  initControls();
 
-  const btnStart = document.getElementById("btn-start");
-  const btnRetry = document.getElementById("btn-retry");
-  const btnL = document.getElementById("btn-left");
-  const btnR = document.getElementById("btn-right");
-  const btnRot = document.getElementById("btn-rotate");
-  const btnDrop = document.getElementById("btn-drop");
+  log(`[BOOT] debugOn=${debugOn}`);
+  log(`[LIB] Matter=${!!Matter} decomp=${!!window.decomp} ShapeExtract=${!!window.ShapeExtract}`);
 
-  const qs = new URLSearchParams(location.search);
-  let debugOn = qs.get("debug") === "1" || CONFIG.debugDefault || localStorage.getItem("PT_DEBUG") === "1";
-  function setDebug(on){ debugOn=!!on; localStorage.setItem("PT_DEBUG",debugOn?"1":"0"); elDebugPanel.classList.toggle("hidden",!debugOn); }
-  elDebugBtn.addEventListener("click",()=>setDebug(!debugOn));
-  setDebug(debugOn);
-  function logDebug(lines){ if(!debugOn) return; elDebugPanel.textContent = Array.isArray(lines)?lines.join("\n"):String(lines); }
-
-  const size = ()=>({w:innerWidth,h:innerHeight});
-
-  let engine, render, runner;
-  let ground;
-  let assets = [];
-  let score = 0;
-  let gameActive = false;
-
-  let current = null;
-  let dropping = false;
-  let settleCount = 0;
-  let spawning = false;   // スポーン多重防止
-
-  function ensureLibs(){
-    return { okMatter: !!Matter, okDecomp: !!window.decomp, okShape: !!window.ShapeExtract };
+  // 先に texture も mask もロードして、LOADING止まりを潰す
+  try {
+    await preloadImages(assets.map(a=>a.tex));
+  } catch(e){
+    console.error(e);
+    $("loading").querySelector("button").textContent = "TEXTURE LOAD FAILED";
+    return;
   }
 
-  function createWorld(){
-    const {w,h}=size();
-    engine = Engine.create();
-    engine.gravity.y = 1;
+  const pack = await ShapeExtract.loadAll(assets, CONFIG.MASK);
+  shapes = pack.shapes;
 
-    // sleeping ON（永久ブルブル対策の本丸）
-    engine.enableSleeping = true;
-    engine.positionIterations = CONFIG.positionIterations;
-    engine.velocityIterations = CONFIG.velocityIterations;
-
-    if (Common && Common.setDecomp && window.decomp) Common.setDecomp(window.decomp);
-
-    const root=document.getElementById("game-root");
-    root.innerHTML="";
-    render = Render.create({
-      element: root,
-      engine,
-      options: { width:w, height:h, wireframes:false, background:"#f0f0f0", pixelRatio:1 }
-    });
-    Render.run(render);
-
-    runner = Runner.create();
-    Runner.run(runner, engine);
-
-    Events.on(engine,"beforeUpdate",updateLoop);
-    Events.on(render,"afterRender",drawDebugOverlay);
-    Events.on(engine,"collisionStart",(ev)=>{
-      if(!current) return;
-      for(const p of ev.pairs){
-        if(p.bodyA===current || p.bodyB===current){
-          current.__touched = true; // ← touched後だけ settle する
-        }
-      }
-    });
-
-    addEventListener("resize",onResize,{passive:true});
+  // ログ（あなたの貼ってくれたやつと同形式）
+  for(const r of pack.results){
+    const used = r.fallback ? "rect" : "mask";
+    const v = r.verts ? r.verts.length : 0;
+    const solid = (r.meta?.solidRatio ?? 0).toFixed(3);
+    const bb = r.meta?.bbox;
+    const crop = bb ? `${(bb.maxX-bb.minX+1)}x${(bb.maxY-bb.minY+1)}` : "-";
+    log(`[ASSET OK] #${r.id} used=${used} solid=${solid} verts=${v} crop=${crop}`);
   }
+  log(`[DONE] assets=${pack.results.length}/${assets.length} fail=0`);
 
-  function onResize(){
-    const {w,h}=size();
-    render.canvas.width=w; render.canvas.height=h;
-    createGround();
-  }
+  show($("loading"), false);
+  show($("title"), true);
+}
 
-  function createGround(){
-    const {w,h}=size();
-    if(ground) Composite.remove(engine.world,ground);
-
-    const y=h - CONFIG.groundHeightFromBottom;
-    const width=w * CONFIG.groundWidthRatio;
-
-    ground = Bodies.rectangle(w/2,y,width,CONFIG.groundThickness,{
-      isStatic:true,label:"Ground",friction:1.0,render:{fillStyle:"#8b4513"}
-    });
-    const wallL=Bodies.rectangle(-40,y-800,80,2000,{isStatic:true,render:{visible:false}});
-    const wallR=Bodies.rectangle(w+40,y-800,80,2000,{isStatic:true,render:{visible:false}});
-    Composite.add(engine.world,[ground,wallL,wallR]);
-  }
-
-  function clearWorld(){
-    Composite.clear(engine.world,false);
-    Engine.clear(engine);
-    createGround();
-  }
-
-  function pickAsset(){ return assets[(Math.random()*assets.length)|0]; }
-
-  function makeBodyFromAsset(asset,x,y){
-    const shape=asset.shape;
-    const tex=asset.texUrl;
-
-    function rectFallback(reason){
-      const bbox = shape?.meta ? { w: shape.meta.cropW || 80, h: shape.meta.cropH || 50 } : { w:80, h:50 };
-      const scale = CONFIG.targetMaxPx / Math.max(bbox.w,bbox.h);
-      const body = Bodies.rectangle(x,y,bbox.w*scale,bbox.h*scale,{
-        label:"Pintxo",
-        restitution:0.05,
-        friction:0.95,
-        frictionStatic:0.95,
-        frictionAir:CONFIG.frictionAir,
-        sleepThreshold:CONFIG.sleepThreshold,
-        render:{ sprite:{ texture:tex, xScale:scale, yScale:scale, xOffset:0.5, yOffset:0.5 } }
-      });
-      body.__dbg={fallback:true,reason,verts:4,solid:(shape?.solidRatio??0),offset:"0.5,0.5",scale};
-      return body;
-    }
-
-    if(!shape || !shape.ok) return rectFallback(shape?.reason || "shape missing");
-
-    const cropW=shape.crop.w, cropH=shape.crop.h;
-    const scale = CONFIG.targetMaxPx / Math.max(cropW,cropH);
-
-    const verts = shape.verts.map(p=>({ x:p.x*scale*CONFIG.hitScale, y:p.y*scale*CONFIG.hitScale }));
-
-    let body;
-    try{
-      body = Bodies.fromVertices(x,y,[verts],{
-        label:"Pintxo",
-        restitution:0.05,
-        friction:0.95,
-        frictionStatic:0.95,
-        frictionAir:CONFIG.frictionAir,
-        sleepThreshold:CONFIG.sleepThreshold,
-        render:{
-          sprite:{
-            texture:tex,
-            xScale:scale, yScale:scale,
-            xOffset:shape.offset.x, yOffset:shape.offset.y  // ← v11で「重心offset」になってズレが消える
-          }
-        }
-      },true);
-    }catch(e){ body=null; }
-
-    if(!body) return rectFallback("fromVertices failed");
-
-    body.__dbg={
-      fallback:false,reason:"-",verts:shape.verts.length,
-      solid:shape.solidRatio.toFixed(3),
-      offset:`${shape.offset.x.toFixed(3)},${shape.offset.y.toFixed(3)}`,
-      scale
-    };
-    return body;
-  }
-
-  function spawnOne(){
-    if(!gameActive) return;
-    if(spawning) return;
-    if(current) return; // ← 多重スポーン防止
-    spawning = true;
-
-    const {w}=size();
-    const topY = render.bounds.min.y;
-    const asset = pickAsset();
-
-    const body = makeBodyFromAsset(asset, w/2, topY + 120);
-    Body.setStatic(body,true);
-    body.__asset=asset;
-    body.__isCurrent=true;
-    body.__touched=false;
-    body.__dropAt=0;
-
-    Composite.add(engine.world,body);
-    current=body;
-    dropping=false;
-    settleCount=0;
-
-    if(debugOn){
-      logDebug([
-        `Spawn`,
-        `tex: ${asset.texUrl}`,
-        `mask: ${asset.maskUrl}`,
-        `ShapeExtract: ${window.ShapeExtract?.version || "?"}`,
-        `fallback: ${body.__dbg.fallback} reason:${body.__dbg.reason}`,
-        `verts:${body.__dbg.verts} solid:${body.__dbg.solid}`,
-        `spriteScale:${body.__dbg.scale.toFixed(3)} hitScale:${CONFIG.hitScale.toFixed(2)}`,
-        `offset:(${body.__dbg.offset})`,
-      ]);
-    }
-
-    // 連打でdrop→spawnが暴れないように少しだけロック
-    setTimeout(()=>{ spawning=false; }, 250);
-  }
-
-  function topOfStackY(){
-    let y=ground.position.y;
-    for(const b of Composite.allBodies(engine.world)){
-      if(b.label==="Pintxo" && !b.__isCurrent) y=Math.min(y,b.position.y);
-    }
-    return y;
-  }
-
-  function updateCamera(){
-    const {w,h}=size();
-    const highestY=topOfStackY();
-    const hasStack=highestY<ground.position.y;
-
-    let targetTopY=0;
-    if(hasStack) targetTopY=highestY - h*0.55;
-    if(targetTopY>0) targetTopY=0;
-
-    const curTopY=render.bounds.min.y;
-    const nextTopY=curTopY + (targetTopY-curTopY)*0.06;
-
-    Render.lookAt(render,{min:{x:0,y:nextTopY},max:{x:w,y:nextTopY+h}});
-  }
-
-  function checkMiss(){
-    const missLine=ground.position.y + CONFIG.missExtra;
-    for(const b of Composite.allBodies(engine.world)){
-      if(b.label!=="Pintxo") continue;
-      if(b.position.y>missLine) return true;
-    }
-    return false;
-  }
-
-  function addScoreFor(body){
-    const diff=ground.position.y - body.position.y;
-    if(diff>0){ score += (diff/10|0) + 10; elScore.textContent=score; }
-  }
-
-  function forceStopCurrent(reason){
-    if(!current) return;
-    // touchedしてないのに20秒なら、何かおかしい＝落ちてる/ハマってる → 負け扱いでもOKだが、
-    // ここは「止めて次へ」で進める
-    Body.setVelocity(current,{x:0,y:0});
-    Body.setAngularVelocity(current,0);
-    Sleeping.set(current,true);
-
-    current.__isCurrent=false;
-    addScoreFor(current);
-
-    current=null;
-    dropping=false;
-    settleCount=0;
-
-    spawnOne();
-
-    if(debugOn){
-      logDebug([
-        `FORCE STOP (${reason})`,
-        `→ 20秒以内に必ず進行`,
-        `（永久ブルブル防止）`
-      ]);
-    }
-  }
-
-  function updateLoop(){
-    if(!gameActive) return;
-
-    updateCamera();
-    if(checkMiss()){ gameOver(); return; }
-
-    // 「止まりかけ」のやつは積極的にsleepさせる（微振動を断ち切る）
-    for(const b of Composite.allBodies(engine.world)){
-      if(b.label!=="Pintxo") continue;
-      if(b.__isCurrent) continue;
-      const sp=Math.hypot(b.velocity.x,b.velocity.y);
-      if(sp < 0.03 && Math.abs(b.angularVelocity) < 0.02){
-        Sleeping.set(b,true);
-      }
-    }
-
-    if(current && dropping){
-      const now = performance.now();
-      const elapsed = now - (current.__dropAt || now);
-
-      // 20秒強制停止
-      if(elapsed > CONFIG.forceStopMs){
-        forceStopCurrent("20s timeout");
-        return;
-      }
-
-      // touched後のみsettle判定（空中で「止まった扱い」になる事故防止）
-      if(current.__touched){
-        const v=current.velocity;
-        const sp=Math.hypot(v.x,v.y);
-        if(sp < CONFIG.settleSpeed && Math.abs(current.angularVelocity) < 0.06) settleCount++;
-        else settleCount=0;
-
-        if(settleCount >= CONFIG.settleFrames){
-          // 確定して次へ
-          Sleeping.set(current,true);
-          current.__isCurrent=false;
-          addScoreFor(current);
-
-          current=null;
-          dropping=false;
-          settleCount=0;
-          spawnOne();
-        }
-      }
-    }
-  }
-
-  function drawDebugOverlay(){
-    if(!debugOn) return;
-    const ctx=render.context;
-    const bodies=Composite.allBodies(engine.world).filter(b=>b.label==="Pintxo");
-    ctx.save();
-    ctx.lineWidth=2;
-    for(const b of bodies){
-      const v=b.vertices;
-      if(!v||v.length<3) continue;
-      ctx.beginPath();
-      ctx.moveTo(v[0].x,v[0].y);
-      for(let i=1;i<v.length;i++) ctx.lineTo(v[i].x,v[i].y);
-      ctx.closePath();
-      ctx.strokeStyle=b.__isCurrent ? "rgba(0,255,120,0.95)" : "rgba(0,180,255,0.35)";
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  function move(dir){
-    if(!current || dropping) return;
-    Body.translate(current,{x:dir*CONFIG.moveStep,y:0});
-  }
-  function rotate(){
-    if(!current || dropping) return;
-    Body.rotate(current,CONFIG.rotateStep);
-  }
-  function drop(){
-    if(!current || dropping) return;
-    dropping=true;
-    current.__dropAt = performance.now();
-    Body.setStatic(current,false);
-  }
-
-  function hold(btn,action){
-    let t=null;
-    const start=(e)=>{ e.preventDefault(); action(); t=setInterval(action,50); };
-    const end=(e)=>{ e.preventDefault(); if(t) clearInterval(t); t=null; };
-    btn.addEventListener("touchstart",start,{passive:false});
-    btn.addEventListener("touchend",end,{passive:false});
-    btn.addEventListener("mousedown",start);
-    btn.addEventListener("mouseup",end);
-    btn.addEventListener("mouseleave",end);
-  }
-  hold(btnL,()=>move(-1));
-  hold(btnR,()=>move(1));
-  btnRot.addEventListener("click",rotate);
-  btnRot.addEventListener("touchstart",(e)=>{e.preventDefault();rotate();},{passive:false});
-  btnDrop.addEventListener("click",drop);
-  btnDrop.addEventListener("touchstart",(e)=>{e.preventDefault();drop();},{passive:false});
-
-  btnStart.addEventListener("click",startGame);
-  btnRetry.addEventListener("click",()=>{ elOver.classList.add("hidden"); startGame(); });
-
-  function gameOver(){
-    gameActive=false;
-    elFinal.textContent=score;
-    elControls.classList.add("hidden");
-    elOver.classList.remove("hidden");
-  }
-
-  async function boot(){
-    elLoading.classList.remove("hidden");
-    elTitle.classList.add("hidden");
-    elOver.classList.add("hidden");
-    elControls.classList.add("hidden");
-    elLoadingText.textContent="LOADING...";
-
-    const libs=ensureLibs();
-    if(!libs.okMatter || !libs.okDecomp || !libs.okShape){
-      elLoadingText.textContent="LIB ERROR";
-      logDebug([`[FATAL] libs missing`,`Matter=${libs.okMatter}`,`decomp=${libs.okDecomp}`,`ShapeExtract=${libs.okShape}`]);
-      return;
-    }
-
-    createWorld();
-    createGround();
-
-    try{
-      elLoadingText.textContent="LOADING ASSETS...";
-      assets = await ShapeExtract.preload({
-        count: CONFIG.ASSET_COUNT,
-        texPattern: CONFIG.TEX_PATTERN,
-        maskPattern: CONFIG.MASK_PATTERN,
-        log: ({ i, shape }) => {
-          if(shape.ok){
-            console.log(`[ASSET OK] #${i} used=mask solid=${shape.solidRatio.toFixed(3)} verts=${shape.verts.length} crop=${shape.crop.w}x${shape.crop.h} comp=${shape.meta.compCount}`);
-          }else{
-            console.warn(`[ASSET NG] #${i} reason=${shape.reason}`);
-          }
-        }
-      });
-    }catch(e){
-      elLoadingText.textContent="ASSET LOAD FAILED";
-      logDebug([`[FATAL] ${e.message}`,`img/ と mask/ のパスを確認`]);
-      return;
-    }
-
-    elLoading.classList.add("hidden");
-    elTitle.classList.remove("hidden");
-  }
-
-  function startGame(){
-    elTitle.classList.add("hidden");
-    elOver.classList.add("hidden");
-    elControls.classList.remove("hidden");
-
-    clearWorld();
-    score=0; elScore.textContent=score;
-
-    gameActive=true;
-    current=null;
-    dropping=false;
-    settleCount=0;
-    spawning=false;
-
-    const {w,h}=size();
-    Render.lookAt(render,{min:{x:0,y:0},max:{x:w,y:h}});
-
-    spawnOne();
-  }
-
-  boot();
-})();
+boot();
 </script>
 </body>
 </html>
